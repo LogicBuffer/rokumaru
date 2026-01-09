@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>経費精算 ロクマル (Supabase版)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>経費精算 ロクマル</title>
     
     <!-- React & Tailwind -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -18,29 +18,67 @@
     <style>
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        body { user-select: none; -webkit-user-select: none; overscroll-behavior-y: none; }
-        /* PC表示時のスクロールバー調整 */
-        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        
+        /* 基本設定：スマホファースト */
+        body { 
+            user-select: none; 
+            -webkit-user-select: none; 
+            overscroll-behavior-y: none;
+            background-color: #f8fafc; /* bg-slate-50 */
+            color: #1e293b; /* text-slate-800 */
+            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100dvh; /* ダイナミックビューポートの高さ */
+            overflow: hidden;
+        }
+
+        /* アプリコンテナ：スマホでは全画面 */
+        #root {
+            width: 100%;
+            height: 100%;
+            background-color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* PC（画面幅が640px以上）の場合のみ、スマホ枠を表示 */
+        @media (min-width: 640px) {
+            body {
+                background-color: #0f172a; /* bg-slate-900 */
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            #root {
+                width: 375px; /* iPhone SE〜X くらいの幅 */
+                height: 800px;
+                max-height: 90vh;
+                border-radius: 2.5rem;
+                border: 8px solid #1e293b; /* border-slate-800 */
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            }
+        }
+
+        /* iPhoneのセーフエリア対応 */
         .ios-safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<!-- PCで見やすいようにFlexboxで中央寄せ & 背景色設定 -->
-<body class="bg-slate-900 min-h-screen w-full flex items-center justify-center text-slate-800 font-sans overflow-hidden">
+<body>
 
-    <!-- アプリのコンテナ：PC時はスマホ枠を表示、スマホ時は全画面 -->
-    <div id="root" class="w-full h-[100dvh] sm:h-[800px] sm:max-h-[90vh] sm:max-w-[400px] sm:rounded-[2.5rem] sm:border-[8px] sm:border-slate-800 bg-white overflow-hidden shadow-2xl relative"></div>
+    <div id="root"></div>
 
     <script type="text/babel">
         // ==========================================
-        //  【設定エリア】 Supabaseのキーを設定済み
+        //  【設定エリア】 Supabaseキー設定済み
         // ==========================================
         const supabaseUrl = "https://oebdycuvvajivxumvgoo.supabase.co";
         const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYmR5Y3V2dmFqaXZ4dW12Z29vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY3OTgsImV4cCI6MjA4MzU0Mjc5OH0.WjrWr-WpBhBpVRc2qLTDUtaqPgXrHSBf4WcO-NzhufA";
         
-        // Supabase初期化
         let supabaseClient;
         try {
-            if (supabaseUrl && supabaseUrl !== "YOUR_SUPABASE_URL" && window.supabase) {
+            if (window.supabase) {
                 supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
             }
         } catch (e) { 
@@ -49,49 +87,33 @@
 
         const { useState, useEffect, useRef } = React;
 
-        // アイコンコンポーネント
         const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [name]);
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
-        // ==========================================
-        //  認証画面コンポーネント (Supabase版)
-        // ==========================================
+        // --- 認証画面 ---
         const AuthScreen = ({ onLoginSuccess }) => {
-            const [status, setStatus] = useState('idle'); // idle, checking, error
+            const [status, setStatus] = useState('idle');
 
-            // デモログイン（エラー回避用）
             const loginAsDemo = () => {
                 const demoUser = { email: "demo@example.com", user_metadata: { full_name: "デモユーザー" } };
                 onLoginSuccess(demoUser);
             };
 
             const login = async () => {
-                if (!supabaseClient) {
-                    if(confirm("Supabaseの設定が完了していません。デモモードで起動しますか？")) {
-                        loginAsDemo();
-                    }
-                    return;
-                }
-
+                if (!supabaseClient) return alert("Supabase設定エラー");
                 try {
                     setStatus('checking');
-                    // SupabaseのOAuthログイン（リダイレクト方式）
                     const { error } = await supabaseClient.auth.signInWithOAuth({
                         provider: 'google',
-                        options: {
-                            redirectTo: window.location.href // 現在のページに戻ってくる
-                        }
+                        options: { redirectTo: window.location.href }
                     });
                     if (error) throw error;
-                    // リダイレクトされるのでここは通過しないことが多い
                 } catch (error) {
                     console.error(error);
                     setStatus('idle');
-                    if (confirm(`【ログインエラー】\n${error.message}\n\nデモモードで起動しますか？`)) {
-                        loginAsDemo();
-                    }
+                    if(confirm("ログインエラー: デモモードで起動しますか？")) loginAsDemo();
                 }
             };
 
@@ -103,9 +125,7 @@
                             ロクマル
                         </h1>
                         <p className="text-slate-400 text-sm">経費精算を、60秒で。</p>
-                        <p className="text-slate-500 text-xs mt-1">(Supabase Edition)</p>
                     </div>
-
                     <div className="w-full max-w-xs space-y-4">
                         {status === 'checking' ? (
                             <div className="text-center animate-pulse">認証サイトへ移動中...</div>
@@ -115,26 +135,15 @@
                                 <span>Googleでログイン</span>
                             </button>
                         )}
-                        
                         <div className="pt-4 border-t border-slate-700 text-center">
-                             <button onClick={loginAsDemo} className="text-slate-500 text-xs hover:text-white underline">
-                                プレビュー用: デモモードで起動
-                            </button>
+                             <button onClick={loginAsDemo} className="text-slate-500 text-xs hover:text-white underline">プレビュー用: デモモード</button>
                         </div>
-
-                        {status === 'error' && (
-                            <p className="text-red-400 text-xs text-center mt-4">
-                                ※ライセンス認証に失敗しました。
-                            </p>
-                        )}
                     </div>
                 </div>
             );
         };
 
-        // ==========================================
-        //  メインアプリコンポーネント
-        // ==========================================
+        // --- メインアプリ ---
         const RokumaruApp = () => {
             const [user, setUser] = useState(null);
             const [screen, setScreen] = useState('home');
@@ -157,35 +166,24 @@
                 { id: 'stay', name: '泊り', icon: 'bed', color: 'bg-purple-100 text-purple-700' },
             ];
 
-            // 初期化 & 認証チェック
             useEffect(() => {
                 const savedData = localStorage.getItem('rokumaru_data');
                 if (savedData) setExpenses(JSON.parse(savedData));
 
                 if (supabaseClient) {
-                    // セッションチェック
                     supabaseClient.auth.getSession().then(async ({ data: { session } }) => {
-                        if (session) {
-                            await checkLicenseAndSetUser(session.user);
-                        }
+                        if (session) await checkLicenseAndSetUser(session.user);
                     });
-
-                    // 認証状態の変化を監視
                     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (_event, session) => {
-                        if (session) {
-                            await checkLicenseAndSetUser(session.user);
-                        }
+                        if (session) await checkLicenseAndSetUser(session.user);
                     });
                     return () => subscription.unsubscribe();
                 }
             }, []);
 
-            // ライセンス（ホワイトリスト）チェック関数
             const checkLicenseAndSetUser = async (authUser) => {
-                if (user) return; // すでにログイン済みなら何もしない
-                
+                if (user) return;
                 try {
-                    // licenses テーブルからメールアドレスを検索
                     const { data, error } = await supabaseClient
                         .from('licenses')
                         .select('*')
@@ -195,19 +193,16 @@
                     if (data) {
                         setUser(authUser);
                     } else {
-                        alert("ライセンスが見つかりません。\n購入済みの方は管理者へご連絡ください。");
+                        alert("ライセンスが見つかりません。");
                         await supabaseClient.auth.signOut();
                     }
                 } catch (err) {
-                    console.error("License Check Error:", err);
-                    // テーブルがない、などのエラー時はとりあえず通さない、またはデモとして扱うか判断
-                    // ここでは厳格に弾く
+                    // console.error("License Check Error:", err);
                     await supabaseClient.auth.signOut();
-                    alert("ライセンス確認中にエラーが発生しました。\nSupabaseの設定(licensesテーブル)を確認してください。");
+                    alert("ライセンス確認エラー");
                 }
             };
 
-            // タイマー
             useEffect(() => {
                 let timer;
                 if (screen === 'input' && timeLeft > 0) {
@@ -216,7 +211,6 @@
                 return () => clearInterval(timer);
             }, [screen, timeLeft]);
 
-            // カメラ起動
             const startCamera = async () => {
                 setScreen('camera');
                 try {
@@ -241,7 +235,6 @@
                 }
             };
 
-            // 撮影＆圧縮
             const takePhoto = () => {
                 if (videoRef.current) {
                     const canvas = document.createElement('canvas');
@@ -264,7 +257,6 @@
                 setCategory(null);
             };
 
-            // 保存＆送信（Supabaseへ）
             const saveExpense = async () => {
                 if(isSending) return;
                 setIsSending(true);
@@ -280,41 +272,30 @@
                     status: '未送信'
                 };
 
-                // ローカル保存
                 let currentExpenses = [newItem, ...expenses];
                 setExpenses(currentExpenses);
                 localStorage.setItem('rokumaru_data', JSON.stringify(currentExpenses));
 
-                // Supabase (PostgreSQL) へ送信
                 if (supabaseClient) {
                     try {
-                        // expensesテーブルへINSERT
-                        const { error } = await supabaseClient
-                            .from('expenses')
-                            .insert([
-                                { 
-                                    date: newItem.date,
-                                    amount: newItem.amount, 
-                                    category: newItem.category, 
-                                    memo: newItem.memo,
-                                    user_email: user.email
-                                }
-                            ]);
-
+                        const { error } = await supabaseClient.from('expenses').insert([{ 
+                            date: newItem.date,
+                            amount: newItem.amount, 
+                            category: newItem.category, 
+                            memo: newItem.memo,
+                            user_email: user.email
+                        }]);
                         if (error) throw error;
 
-                        // 成功ステータス更新
                         const updated = currentExpenses.map(e => e.id === newItem.id ? {...e, status: '送信済'} : e);
                         setExpenses(updated);
                         localStorage.setItem('rokumaru_data', JSON.stringify(updated));
-                        
                         alert("保存＆クラウド送信完了！");
                     } catch (e) {
                         console.error(e);
-                        alert("保存しました（クラウド送信失敗: ネット接続などを確認してください）");
+                        alert("保存しました（クラウド送信失敗）");
                     }
                 }
-                
                 setIsSending(false);
                 setScreen('home');
             };
@@ -326,10 +307,8 @@
                 }
             }
 
-            // --- 画面レンダリング ---
             if (!user) return <AuthScreen onLoginSuccess={setUser} />;
 
-            // ホーム画面
             if (screen === 'home') {
                 const total = expenses.reduce((a,c) => a + c.amount, 0);
                 return (
@@ -339,9 +318,7 @@
                                 <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2">ZERO</span>
                                 ロクマル
                             </h1>
-                            <div className="flex space-x-2">
-                                <button onClick={logout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
-                            </div>
+                            <button onClick={logout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
                             <div className="w-full bg-white p-6 rounded-2xl shadow border border-slate-200 text-center relative overflow-hidden">
@@ -364,7 +341,6 @@
                 );
             }
 
-            // カメラ画面
             if (screen === 'camera') return (
                 <div className="h-full bg-black relative flex flex-col">
                     <video ref={videoRef} className="flex-1 object-cover" autoPlay playsInline muted></video>
@@ -375,7 +351,6 @@
                 </div>
             );
 
-            // 入力画面
             if (screen === 'input') return (
                 <div className="flex flex-col h-full bg-slate-50">
                     <div className="bg-slate-800 text-white p-3 flex justify-between items-center shrink-0">
@@ -411,7 +386,6 @@
                 </div>
             );
 
-            // 履歴画面
             if (screen === 'history') return (
                 <div className="flex flex-col h-full bg-slate-50">
                     <div className="p-4 bg-white shadow-sm flex items-center"><button onClick={() => setScreen('home')} className="mr-4"><Icon name="chevron-left" /></button><h2 className="font-bold">履歴</h2></div>
