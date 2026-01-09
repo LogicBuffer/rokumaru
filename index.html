@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>経費精算 ロクマル (Supabase版)</title>
+    
+    <!-- React & Tailwind -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        body { user-select: none; -webkit-user-select: none; overscroll-behavior-y: none; }
+        /* PC表示時のスクロールバー調整 */
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        .ios-safe-area { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+</head>
+<!-- PCで見やすいようにFlexboxで中央寄せ & 背景色設定 -->
+<body class="bg-slate-900 min-h-screen w-full flex items-center justify-center text-slate-800 font-sans overflow-hidden">
+
+    <!-- アプリのコンテナ：PC時はスマホ枠を表示、スマホ時は全画面 -->
+    <div id="root" class="w-full h-[100dvh] sm:h-[800px] sm:max-h-[90vh] sm:max-w-[400px] sm:rounded-[2.5rem] sm:border-[8px] sm:border-slate-800 bg-white overflow-hidden shadow-2xl relative"></div>
+
+    <script type="text/babel">
+        // ==========================================
+        //  【設定エリア】 Supabaseのキーを設定済み
+        // ==========================================
+        const supabaseUrl = "https://oebdycuvvajivxumvgoo.supabase.co";
+        const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYmR5Y3V2dmFqaXZ4dW12Z29vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY3OTgsImV4cCI6MjA4MzU0Mjc5OH0.WjrWr-WpBhBpVRc2qLTDUtaqPgXrHSBf4WcO-NzhufA";
+        
+        // Supabase初期化
+        let supabaseClient;
+        try {
+            if (supabaseUrl && supabaseUrl !== "YOUR_SUPABASE_URL" && window.supabase) {
+                supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+            }
+        } catch (e) { 
+            console.error("Supabase Init Error", e); 
+        }
+
+        const { useState, useEffect, useRef } = React;
+
+        // アイコンコンポーネント
+        const Icon = ({ name, size = 24, className = "" }) => {
+            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} width={size} height={size} className={className}></i>;
+        };
+
+        // ==========================================
+        //  認証画面コンポーネント (Supabase版)
+        // ==========================================
+        const AuthScreen = ({ onLoginSuccess }) => {
+            const [status, setStatus] = useState('idle'); // idle, checking, error
+
+            // デモログイン（エラー回避用）
+            const loginAsDemo = () => {
+                const demoUser = { email: "demo@example.com", user_metadata: { full_name: "デモユーザー" } };
+                onLoginSuccess(demoUser);
+            };
+
+            const login = async () => {
+                if (!supabaseClient) {
+                    if(confirm("Supabaseの設定が完了していません。デモモードで起動しますか？")) {
+                        loginAsDemo();
+                    }
+                    return;
+                }
+
+                try {
+                    setStatus('checking');
+                    // SupabaseのOAuthログイン（リダイレクト方式）
+                    const { error } = await supabaseClient.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: {
+                            redirectTo: window.location.href // 現在のページに戻ってくる
+                        }
+                    });
+                    if (error) throw error;
+                    // リダイレクトされるのでここは通過しないことが多い
+                } catch (error) {
+                    console.error(error);
+                    setStatus('idle');
+                    if (confirm(`【ログインエラー】\n${error.message}\n\nデモモードで起動しますか？`)) {
+                        loginAsDemo();
+                    }
+                }
+            };
+
+            return (
+                <div className="flex flex-col h-full items-center justify-center bg-slate-900 text-white p-6 space-y-8">
+                    <div className="text-center">
+                        <h1 className="text-3xl font-bold tracking-widest mb-2">
+                            <span className="bg-blue-600 text-white text-sm px-2 py-1 rounded mr-2 align-middle">ZERO</span>
+                            ロクマル
+                        </h1>
+                        <p className="text-slate-400 text-sm">経費精算を、60秒で。</p>
+                        <p className="text-slate-500 text-xs mt-1">(Supabase Edition)</p>
+                    </div>
+
+                    <div className="w-full max-w-xs space-y-4">
+                        {status === 'checking' ? (
+                            <div className="text-center animate-pulse">認証サイトへ移動中...</div>
+                        ) : (
+                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-2 active:scale-95 transition-transform">
+                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6" />
+                                <span>Googleでログイン</span>
+                            </button>
+                        )}
+                        
+                        <div className="pt-4 border-t border-slate-700 text-center">
+                             <button onClick={loginAsDemo} className="text-slate-500 text-xs hover:text-white underline">
+                                プレビュー用: デモモードで起動
+                            </button>
+                        </div>
+
+                        {status === 'error' && (
+                            <p className="text-red-400 text-xs text-center mt-4">
+                                ※ライセンス認証に失敗しました。
+                            </p>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        //  メインアプリコンポーネント
+        // ==========================================
+        const RokumaruApp = () => {
+            const [user, setUser] = useState(null);
+            const [screen, setScreen] = useState('home');
+            const [amount, setAmount] = useState('');
+            const [category, setCategory] = useState(null);
+            const [expenses, setExpenses] = useState([]);
+            const [timeLeft, setTimeLeft] = useState(60);
+            const [capturedImage, setCapturedImage] = useState(null);
+            const [isSending, setIsSending] = useState(false);
+            
+            const videoRef = useRef(null);
+            const streamRef = useRef(null);
+
+            const categories = [
+                { id: 'food', name: 'メシ', icon: 'utensils', color: 'bg-orange-100 text-orange-700' },
+                { id: 'transport', name: '移動', icon: 'car', color: 'bg-blue-100 text-blue-700' },
+                { id: 'buy', name: '買う', icon: 'shopping-cart', color: 'bg-green-100 text-green-700' },
+                { id: 'park', name: 'Ｐ場', icon: 'circle-parking', color: 'bg-gray-100 text-gray-700' },
+                { id: 'other', name: '他', icon: 'file-text', color: 'bg-yellow-100 text-yellow-700' },
+                { id: 'stay', name: '泊り', icon: 'bed', color: 'bg-purple-100 text-purple-700' },
+            ];
+
+            // 初期化 & 認証チェック
+            useEffect(() => {
+                const savedData = localStorage.getItem('rokumaru_data');
+                if (savedData) setExpenses(JSON.parse(savedData));
+
+                if (supabaseClient) {
+                    // セッションチェック
+                    supabaseClient.auth.getSession().then(async ({ data: { session } }) => {
+                        if (session) {
+                            await checkLicenseAndSetUser(session.user);
+                        }
+                    });
+
+                    // 認証状態の変化を監視
+                    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+                        if (session) {
+                            await checkLicenseAndSetUser(session.user);
+                        }
+                    });
+                    return () => subscription.unsubscribe();
+                }
+            }, []);
+
+            // ライセンス（ホワイトリスト）チェック関数
+            const checkLicenseAndSetUser = async (authUser) => {
+                if (user) return; // すでにログイン済みなら何もしない
+                
+                try {
+                    // licenses テーブルからメールアドレスを検索
+                    const { data, error } = await supabaseClient
+                        .from('licenses')
+                        .select('*')
+                        .eq('email', authUser.email)
+                        .single();
+
+                    if (data) {
+                        setUser(authUser);
+                    } else {
+                        alert("ライセンスが見つかりません。\n購入済みの方は管理者へご連絡ください。");
+                        await supabaseClient.auth.signOut();
+                    }
+                } catch (err) {
+                    console.error("License Check Error:", err);
+                    // テーブルがない、などのエラー時はとりあえず通さない、またはデモとして扱うか判断
+                    // ここでは厳格に弾く
+                    await supabaseClient.auth.signOut();
+                    alert("ライセンス確認中にエラーが発生しました。\nSupabaseの設定(licensesテーブル)を確認してください。");
+                }
+            };
+
+            // タイマー
+            useEffect(() => {
+                let timer;
+                if (screen === 'input' && timeLeft > 0) {
+                    timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+                }
+                return () => clearInterval(timer);
+            }, [screen, timeLeft]);
+
+            // カメラ起動
+            const startCamera = async () => {
+                setScreen('camera');
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: { ideal: "environment" } }
+                    });
+                    streamRef.current = stream;
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = stream;
+                        videoRef.current.play();
+                    }
+                } catch (err) {
+                    alert("カメラエラー: " + err);
+                    setScreen('input');
+                }
+            };
+
+            const stopCamera = () => {
+                if (streamRef.current) {
+                    streamRef.current.getTracks().forEach(t => t.stop());
+                    streamRef.current = null;
+                }
+            };
+
+            // 撮影＆圧縮
+            const takePhoto = () => {
+                if (videoRef.current) {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 1024;
+                    let w = videoRef.current.videoWidth;
+                    let h = videoRef.current.videoHeight;
+                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } }
+                    else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(videoRef.current, 0, 0, w, h);
+                    setCapturedImage(canvas.toDataURL('image/jpeg', 0.7));
+                }
+                stopCamera();
+                setScreen('input');
+                setTimeLeft(60);
+                setAmount('');
+                setCategory(null);
+            };
+
+            // 保存＆送信（Supabaseへ）
+            const saveExpense = async () => {
+                if(isSending) return;
+                setIsSending(true);
+
+                const now = new Date();
+                const newItem = {
+                    id: Date.now(),
+                    date: now.toLocaleString(),
+                    amount: parseInt(amount) || 0,
+                    category: category ? category.name : '未分類',
+                    userName: user.email,
+                    memo: 'アプリ入力',
+                    status: '未送信'
+                };
+
+                // ローカル保存
+                let currentExpenses = [newItem, ...expenses];
+                setExpenses(currentExpenses);
+                localStorage.setItem('rokumaru_data', JSON.stringify(currentExpenses));
+
+                // Supabase (PostgreSQL) へ送信
+                if (supabaseClient) {
+                    try {
+                        // expensesテーブルへINSERT
+                        const { error } = await supabaseClient
+                            .from('expenses')
+                            .insert([
+                                { 
+                                    date: newItem.date,
+                                    amount: newItem.amount, 
+                                    category: newItem.category, 
+                                    memo: newItem.memo,
+                                    user_email: user.email
+                                }
+                            ]);
+
+                        if (error) throw error;
+
+                        // 成功ステータス更新
+                        const updated = currentExpenses.map(e => e.id === newItem.id ? {...e, status: '送信済'} : e);
+                        setExpenses(updated);
+                        localStorage.setItem('rokumaru_data', JSON.stringify(updated));
+                        
+                        alert("保存＆クラウド送信完了！");
+                    } catch (e) {
+                        console.error(e);
+                        alert("保存しました（クラウド送信失敗: ネット接続などを確認してください）");
+                    }
+                }
+                
+                setIsSending(false);
+                setScreen('home');
+            };
+
+            const logout = async () => {
+                if(confirm("ログアウトしますか？")) {
+                    if (supabaseClient) await supabaseClient.auth.signOut();
+                    setUser(null);
+                }
+            }
+
+            // --- 画面レンダリング ---
+            if (!user) return <AuthScreen onLoginSuccess={setUser} />;
+
+            // ホーム画面
+            if (screen === 'home') {
+                const total = expenses.reduce((a,c) => a + c.amount, 0);
+                return (
+                    <div className="flex flex-col h-full bg-slate-50">
+                        <div className="p-4 bg-white shadow-sm flex justify-between items-center">
+                            <h1 className="text-xl font-bold flex items-center text-slate-800">
+                                <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2">ZERO</span>
+                                ロクマル
+                            </h1>
+                            <div className="flex space-x-2">
+                                <button onClick={logout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
+                            </div>
+                        </div>
+                        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
+                            <div className="w-full bg-white p-6 rounded-2xl shadow border border-slate-200 text-center relative overflow-hidden">
+                                <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-bl">Supabase連携中</div>
+                                <p className="text-slate-500 text-xs mb-1 truncate px-4">{user.email}</p>
+                                <p className="text-4xl font-bold text-slate-800">¥ {total.toLocaleString()}</p>
+                            </div>
+                            <div className="relative group cursor-pointer" onClick={startCamera}>
+                                <div className="absolute inset-0 bg-blue-400 rounded-full blur-xl opacity-20 animate-pulse"></div>
+                                <button className="relative w-48 h-48 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full shadow-xl flex flex-col items-center justify-center text-white active:scale-95 transition-transform border-4 border-blue-100">
+                                    <Icon name="camera" size={64} />
+                                    <span className="mt-2 text-xl font-bold tracking-widest">撮る</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-4 bg-white border-t ios-safe-area">
+                            <button onClick={() => setScreen('history')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-lg font-bold flex justify-center items-center"><Icon name="file-text" size={18} className="mr-2"/>履歴</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // カメラ画面
+            if (screen === 'camera') return (
+                <div className="h-full bg-black relative flex flex-col">
+                    <video ref={videoRef} className="flex-1 object-cover" autoPlay playsInline muted></video>
+                    <div className="h-32 bg-black/80 flex items-center justify-center relative ios-safe-area">
+                        <button onClick={() => { stopCamera(); setScreen('home'); }} className="absolute left-8 text-white p-4"><Icon name="x" /></button>
+                        <button onClick={takePhoto} className="w-20 h-20 bg-white rounded-full border-4 border-slate-300 active:bg-slate-200"></button>
+                    </div>
+                </div>
+            );
+
+            // 入力画面
+            if (screen === 'input') return (
+                <div className="flex flex-col h-full bg-slate-50">
+                    <div className="bg-slate-800 text-white p-3 flex justify-between items-center shrink-0">
+                        <div className="w-12 h-16 bg-slate-700 rounded overflow-hidden border border-slate-600">
+                             {capturedImage && <img src={capturedImage} className="w-full h-full object-cover" />}
+                        </div>
+                        <div className={`flex items-center px-3 py-1 rounded-full ${timeLeft < 10 ? 'bg-red-500 animate-pulse' : 'bg-slate-700'}`}>
+                            <Icon name="clock" size={16} className="mr-1" /><span className="font-mono font-bold text-lg">{timeLeft}</span>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex flex-col">
+                        <div className="bg-white p-4 border-b border-slate-200 text-right">
+                             <span className="text-2xl text-slate-400 mr-2">¥</span>
+                             <span className="text-5xl font-bold text-slate-800">{amount || 0}</span>
+                        </div>
+                        <div className="p-2 grid grid-cols-3 gap-2 bg-slate-100">
+                            {categories.map((cat) => (
+                                <button key={cat.id} onClick={() => setCategory(cat)} className={`p-3 rounded-xl border flex flex-col items-center justify-center active:scale-95 h-20 ${category && category.id === cat.id ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'}`}>
+                                    <Icon name={cat.icon} size={24} className="mb-1"/><span className="font-bold text-xs">{cat.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex-1 grid grid-cols-3 bg-white min-h-0">
+                            {[7,8,9,4,5,6,1,2,3].map(n => <button key={n} onClick={() => amount.length < 8 && setAmount(a=>a+n)} className="text-2xl font-medium border-slate-50 border text-slate-700 active:bg-slate-100">{n}</button>)}
+                            <button onClick={() => amount.length < 7 && setAmount(a=>a+"00")} className="text-xl font-medium border-slate-50 border text-slate-700">00</button>
+                            <button onClick={() => amount.length < 8 && setAmount(a=>a+"0")} className="text-2xl font-medium border-slate-50 border text-slate-700">0</button>
+                            <button onClick={() => setAmount(a=>a.slice(0,-1))} className="text-slate-500 border-slate-50 border bg-slate-50 flex items-center justify-center"><Icon name="delete" /></button>
+                        </div>
+                    </div>
+                    <button onClick={saveExpense} disabled={!amount} className={`w-full py-4 text-white font-bold text-xl flex items-center justify-center shadow-lg shrink-0 ios-safe-area ${amount ? 'bg-blue-600 active:bg-blue-700' : 'bg-slate-400'}`}>
+                        {isSending ? "送信中..." : "保存＆クラウドへ"}
+                    </button>
+                </div>
+            );
+
+            // 履歴画面
+            if (screen === 'history') return (
+                <div className="flex flex-col h-full bg-slate-50">
+                    <div className="p-4 bg-white shadow-sm flex items-center"><button onClick={() => setScreen('home')} className="mr-4"><Icon name="chevron-left" /></button><h2 className="font-bold">履歴</h2></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                         {expenses.map(e => (
+                             <div key={e.id} className="bg-white p-3 rounded border flex justify-between">
+                                 <div><div className="text-xs text-slate-500">{e.date}</div><div className="font-bold">¥{e.amount} <span className="text-xs font-normal bg-slate-100 px-1">{e.category}</span></div></div>
+                                 <div className="text-xs text-slate-400 flex items-center">{e.status === '送信済' ? <span className="text-green-500 flex items-center"><Icon name="check" size={12}/>済</span> : '-'}</div>
+                             </div>
+                         ))}
+                    </div>
+                </div>
+            );
+
+            return null;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<RokumaruApp />);
+    </script>
+</body>
+</html>
