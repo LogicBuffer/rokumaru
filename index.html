@@ -16,73 +16,51 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        /* 数字入力の矢印を消す */
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         
-        /* 全体設定 */
+        /* 画面固定設定 */
         html, body {
             margin: 0;
             padding: 0;
             width: 100%;
-            height: 100dvh; /* ダイナミックビューポートの高さ（アドレスバー対策） */
-            overflow: hidden; /* スクロール禁止 */
-            background-color: #f1f5f9; /* bg-slate-100 */
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+            inset: 0;
+            background-color: #f8fafc;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            user-select: none;
-            -webkit-user-select: none;
             touch-action: manipulation;
         }
 
-        /* アプリのコンテナ */
         #root {
             width: 100%;
             height: 100%;
             display: flex;
             flex-direction: column;
+            background-color: white;
         }
 
-        /* --- PC・タブレット向けの表示調整 --- */
         @media (min-width: 640px) {
             body {
+                position: relative;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background-color: #0f172a; /* bg-slate-900 */
-                background-image: radial-gradient(#1e293b 1px, transparent 1px);
-                background-size: 20px 20px;
+                background-color: #0f172a;
+                height: 100vh;
             }
-            
             #root {
-                width: 375px; /* iPhoneサイズ固定 */
+                width: 375px;
                 height: 812px;
-                max-height: 95dvh;
-                background-color: white;
+                max-height: 90vh;
                 border-radius: 40px;
                 border: 12px solid #1e293b;
                 box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
                 position: relative;
                 overflow: hidden;
             }
-
-            /* スマホのノッチ（飾り） */
-            #root::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 150px;
-                height: 24px;
-                background-color: #1e293b;
-                border-bottom-left-radius: 16px;
-                border-bottom-right-radius: 16px;
-                z-index: 100;
-                pointer-events: none;
-            }
         }
-
-        /* iPhoneのセーフエリア対応 */
         .ios-safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
@@ -113,15 +91,13 @@
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
-        // --- ローディング画面（認証チェック中に表示） ---
         const LoadingScreen = () => (
-            <div className="flex flex-col items-center justify-center h-full bg-slate-50">
+            <div className="flex flex-col items-center justify-center h-full bg-slate-50 w-full">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
                 <p className="text-slate-400 text-sm font-bold tracking-wider">ROKUMARU</p>
             </div>
         );
 
-        // --- 認証画面 ---
         const AuthScreen = ({ onLoginSuccess }) => {
             const [status, setStatus] = useState('idle');
 
@@ -147,7 +123,7 @@
             };
 
             return (
-                <div className="flex flex-col h-full items-center justify-center bg-slate-900 text-white p-6 space-y-8 relative z-10">
+                <div className="flex flex-col h-full items-center justify-center bg-slate-900 text-white p-6 space-y-8 w-full">
                     <div className="text-center">
                         <h1 className="text-3xl font-bold tracking-widest mb-2">
                             <span className="bg-blue-600 text-white text-sm px-2 py-1 rounded mr-2 align-middle">ZERO</span>
@@ -157,11 +133,9 @@
                     </div>
                     <div className="w-full max-w-xs space-y-4">
                         {status === 'checking' ? (
-                            <div className="text-center animate-pulse">
-                                <p>Googleへ移動しています...</p>
-                            </div>
+                            <div className="text-center animate-pulse"><p>Googleへ移動中...</p></div>
                         ) : (
-                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-2 active:scale-95 transition-transform hover:bg-slate-100">
+                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-2 active:scale-95 transition-transform">
                                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6" />
                                 <span>Googleでログイン</span>
                             </button>
@@ -174,10 +148,9 @@
             );
         };
 
-        // --- メインアプリ ---
         const RokumaruApp = () => {
             const [user, setUser] = useState(null);
-            const [isLoading, setIsLoading] = useState(true); // 初期ロード状態
+            const [isLoading, setIsLoading] = useState(true);
             const [screen, setScreen] = useState('home');
             const [amount, setAmount] = useState('');
             const [category, setCategory] = useState(null);
@@ -198,29 +171,19 @@
                 { id: 'stay', name: '泊り', icon: 'bed', color: 'bg-purple-100 text-purple-700' },
             ];
 
-            // 初期化 & 認証チェック
             useEffect(() => {
                 const savedData = localStorage.getItem('rokumaru_data');
                 if (savedData) setExpenses(JSON.parse(savedData));
 
                 const checkSession = async () => {
-                    if (!supabaseClient) {
-                        setIsLoading(false);
-                        return;
-                    }
-
-                    // 現在のセッションを取得
+                    if (!supabaseClient) { setIsLoading(false); return; }
                     const { data: { session } } = await supabaseClient.auth.getSession();
-                    if (session) {
-                        await checkLicenseAndSetUser(session.user);
-                    } else {
-                        setIsLoading(false); // セッションなし＝ログイン画面へ
-                    }
-
-                    // 認証状態の変化を監視
+                    if (session) await checkLicenseAndSetUser(session.user);
+                    else setIsLoading(false);
+                    
                     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
                         if (event === 'SIGNED_IN' && session) {
-                            setIsLoading(true); // チェック中はローディング
+                            setIsLoading(true);
                             await checkLicenseAndSetUser(session.user);
                         } else if (event === 'SIGNED_OUT') {
                             setUser(null);
@@ -229,30 +192,18 @@
                     });
                     return () => subscription.unsubscribe();
                 };
-
                 checkSession();
             }, []);
 
             const checkLicenseAndSetUser = async (authUser) => {
                 try {
-                    const { data, error } = await supabaseClient
-                        .from('licenses')
-                        .select('*')
-                        .eq('email', authUser.email)
-                        .single();
-
-                    if (data) {
-                        setUser(authUser);
-                    } else {
-                        alert("ライセンスが見つかりません。");
-                        await supabaseClient.auth.signOut();
-                    }
+                    const { data, error } = await supabaseClient.from('licenses').select('*').eq('email', authUser.email).single();
+                    if (data) setUser(authUser);
+                    else { alert("ライセンスが見つかりません。"); await supabaseClient.auth.signOut(); }
                 } catch (err) {
-                    console.error("License Check Error:", err);
-                    // エラー時は弾くが、ここでは簡易的にデモとして通すロジックは入れない
                     await supabaseClient.auth.signOut();
                 } finally {
-                    setIsLoading(false); // チェック完了
+                    setIsLoading(false);
                 }
             };
 
@@ -267,25 +218,14 @@
             const startCamera = async () => {
                 setScreen('camera');
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: { ideal: "environment" } }
-                    });
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
                     streamRef.current = stream;
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = stream;
-                        videoRef.current.play();
-                    }
-                } catch (err) {
-                    alert("カメラエラー: " + err);
-                    setScreen('input');
-                }
+                    if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+                } catch (err) { alert("カメラエラー: " + err); setScreen('input'); }
             };
 
             const stopCamera = () => {
-                if (streamRef.current) {
-                    streamRef.current.getTracks().forEach(t => t.stop());
-                    streamRef.current = null;
-                }
+                if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
             };
 
             const takePhoto = () => {
@@ -294,11 +234,8 @@
                     const MAX_SIZE = 1024;
                     let w = videoRef.current.videoWidth;
                     let h = videoRef.current.videoHeight;
-                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } }
-                    else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
-
-                    canvas.width = w;
-                    canvas.height = h;
+                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+                    canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(videoRef.current, 0, 0, w, h);
                     setCapturedImage(canvas.toDataURL('image/jpeg', 0.7));
@@ -313,98 +250,90 @@
             const saveExpense = async () => {
                 if(isSending) return;
                 setIsSending(true);
-
                 const now = new Date();
-                const newItem = {
-                    id: Date.now(),
-                    date: now.toLocaleString(),
-                    amount: parseInt(amount) || 0,
-                    category: category ? category.name : '未分類',
-                    userName: user.email,
-                    memo: 'アプリ入力',
-                    status: '未送信'
-                };
-
+                const newItem = { id: Date.now(), date: now.toLocaleString(), amount: parseInt(amount) || 0, category: category ? category.name : '未分類', userName: user.email, memo: 'アプリ入力', status: '未送信' };
+                
                 let currentExpenses = [newItem, ...expenses];
                 setExpenses(currentExpenses);
                 localStorage.setItem('rokumaru_data', JSON.stringify(currentExpenses));
 
                 if (supabaseClient) {
                     try {
-                        const { error } = await supabaseClient.from('expenses').insert([{ 
-                            date: newItem.date,
-                            amount: newItem.amount, 
-                            category: newItem.category, 
-                            memo: newItem.memo,
-                            user_email: user.email
-                        }]);
+                        const { error } = await supabaseClient.from('expenses').insert([{ date: newItem.date, amount: newItem.amount, category: newItem.category, memo: newItem.memo, user_email: user.email }]);
                         if (error) throw error;
-
                         const updated = currentExpenses.map(e => e.id === newItem.id ? {...e, status: '送信済'} : e);
                         setExpenses(updated);
                         localStorage.setItem('rokumaru_data', JSON.stringify(updated));
-                        
                         alert("保存＆クラウド送信完了！");
-                    } catch (e) {
-                        console.error(e);
-                        alert("保存しました（クラウド送信失敗）");
-                    }
+                    } catch (e) { console.error(e); alert("保存しました（クラウド送信失敗）"); }
                 }
                 setIsSending(false);
                 setScreen('home');
             };
 
+            // ★追加機能：CSVダウンロード
+            const downloadCSV = () => {
+                if (expenses.length === 0) return alert("データがありません");
+                
+                // BOM付き（Excelで文字化けしないおまじない）
+                const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+                let csvContent = "日付,金額,科目,メモ,担当者\n";
+                
+                expenses.forEach(e => {
+                    // カンマを含むメモなどはダブルクォートで囲むなどの処理が本来必要だが、簡易的にそのまま
+                    const safeDate = e.date.replace(',', '');
+                    const safeMemo = e.memo ? e.memo.replace(',', ' ') : '';
+                    const safeUser = e.userName || '';
+                    csvContent += `${safeDate},${e.amount},${e.category},${safeMemo},${safeUser}\n`;
+                });
+
+                const blob = new Blob([bom, csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const dateStr = new Date().toISOString().slice(0,10);
+                a.download = `rokumaru_export_${dateStr}.csv`;
+                a.click();
+            };
+
             const logout = async () => {
-                if(confirm("ログアウトしますか？")) {
-                    if (supabaseClient) await supabaseClient.auth.signOut();
-                    setUser(null);
-                }
+                if(confirm("ログアウトしますか？")) { if (supabaseClient) await supabaseClient.auth.signOut(); setUser(null); }
             }
 
-            // --- 画面レンダリング分岐 ---
-            
-            // 1. ロード中（これが追加されたのでチラつきません）
             if (isLoading) return <LoadingScreen />;
-
-            // 2. 未ログイン
             if (!user) return <AuthScreen onLoginSuccess={setUser} />;
 
-            // 3. アプリ画面 (ホーム)
             if (screen === 'home') {
                 const total = expenses.reduce((a,c) => a + c.amount, 0);
                 return (
-                    <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
+                    <div className="flex flex-col h-full bg-slate-50 w-full">
                         <div className="p-4 bg-white shadow-sm flex justify-between items-center shrink-0">
-                            <h1 className="text-xl font-bold flex items-center text-slate-800">
-                                <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2">ZERO</span>
-                                ロクマル
-                            </h1>
+                            <h1 className="text-xl font-bold flex items-center text-slate-800"><span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2">ZERO</span>ロクマル</h1>
                             <button onClick={logout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8 overflow-y-auto">
-                            <div className="w-full bg-white p-6 rounded-2xl shadow border border-slate-200 text-center relative overflow-hidden">
-                                <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-bl">Supabase連携中</div>
+                            <div className="w-full bg-white p-6 rounded-2xl shadow border border-slate-200 text-center relative">
+                                <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-bl">Supabase</div>
                                 <p className="text-slate-500 text-xs mb-1 truncate px-4">{user.email}</p>
                                 <p className="text-4xl font-bold text-slate-800">¥ {total.toLocaleString()}</p>
                             </div>
                             <div className="relative group cursor-pointer" onClick={startCamera}>
                                 <div className="absolute inset-0 bg-blue-400 rounded-full blur-xl opacity-20 animate-pulse"></div>
                                 <button className="relative w-48 h-48 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full shadow-xl flex flex-col items-center justify-center text-white active:scale-95 transition-transform border-4 border-blue-100">
-                                    <Icon name="camera" size={64} />
-                                    <span className="mt-2 text-xl font-bold tracking-widest">撮る</span>
+                                    <Icon name="camera" size={64} /><span className="mt-2 text-xl font-bold tracking-widest">撮る</span>
                                 </button>
                             </div>
                         </div>
                         <div className="p-4 bg-white border-t ios-safe-area shrink-0">
-                            <button onClick={() => setScreen('history')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-lg font-bold flex justify-center items-center"><Icon name="file-text" size={18} className="mr-2"/>履歴</button>
+                            <button onClick={() => setScreen('history')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-lg font-bold flex justify-center items-center"><Icon name="file-text" size={18} className="mr-2"/>履歴 / 出力</button>
                         </div>
                     </div>
                 );
             }
 
             if (screen === 'camera') return (
-                <div className="h-full bg-black relative flex flex-col overflow-hidden">
-                    <video ref={videoRef} className="flex-1 object-cover" autoPlay playsInline muted></video>
+                <div className="h-full bg-black relative flex flex-col w-full">
+                    <video ref={videoRef} className="flex-1 object-cover w-full" autoPlay playsInline muted></video>
                     <div className="h-32 bg-black/80 flex items-center justify-center relative ios-safe-area shrink-0">
                         <button onClick={() => { stopCamera(); setScreen('home'); }} className="absolute left-8 text-white p-4"><Icon name="x" /></button>
                         <button onClick={takePhoto} className="w-20 h-20 bg-white rounded-full border-4 border-slate-300 active:bg-slate-200"></button>
@@ -413,7 +342,7 @@
             );
 
             if (screen === 'input') return (
-                <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
+                <div className="flex flex-col h-full bg-slate-50 w-full">
                     <div className="bg-slate-800 text-white p-3 flex justify-between items-center shrink-0">
                         <div className="w-12 h-16 bg-slate-700 rounded overflow-hidden border border-slate-600">
                              {capturedImage && <img src={capturedImage} className="w-full h-full object-cover" />}
@@ -422,7 +351,7 @@
                             <Icon name="clock" size={16} className="mr-1" /><span className="font-mono font-bold text-lg">{timeLeft}</span>
                         </div>
                     </div>
-                    <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="flex-1 flex flex-col min-h-0">
                         <div className="bg-white p-4 border-b border-slate-200 text-right shrink-0">
                              <span className="text-2xl text-slate-400 mr-2">¥</span>
                              <span className="text-5xl font-bold text-slate-800">{amount || 0}</span>
@@ -448,9 +377,18 @@
             );
 
             if (screen === 'history') return (
-                <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
-                    <div className="p-4 bg-white shadow-sm flex items-center shrink-0"><button onClick={() => setScreen('home')} className="mr-4"><Icon name="chevron-left" /></button><h2 className="font-bold">履歴</h2></div>
+                <div className="flex flex-col h-full bg-slate-50 w-full">
+                    <div className="p-4 bg-white shadow-sm flex items-center justify-between shrink-0">
+                        <div className="flex items-center">
+                            <button onClick={() => setScreen('home')} className="mr-4"><Icon name="chevron-left" /></button>
+                            <h2 className="font-bold">履歴</h2>
+                        </div>
+                        <button onClick={downloadCSV} className="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg flex items-center font-bold">
+                            <Icon name="download" size={14} className="mr-1"/> CSV
+                        </button>
+                    </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                         {expenses.length === 0 && <div className="text-center text-slate-400 mt-10">データなし</div>}
                          {expenses.map(e => (
                              <div key={e.id} className="bg-white p-3 rounded border flex justify-between">
                                  <div><div className="text-xs text-slate-500">{e.date}</div><div className="font-bold">¥{e.amount} <span className="text-xs font-normal bg-slate-100 px-1">{e.category}</span></div></div>
