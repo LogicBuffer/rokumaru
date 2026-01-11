@@ -38,32 +38,73 @@
 
         // --- 管理画面メイン ---
         const AdminDashboard = () => {
+            const [view, setView] = useState('dashboard'); // dashboard | users
             const [expenses, setExpenses] = useState([]);
+            const [licenses, setLicenses] = useState([]);
             const [loading, setLoading] = useState(true);
             const [filterUser, setFilterUser] = useState("");
             const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
 
-            // データ取得
-            const fetchData = async () => {
+            // データ取得（経費データ）
+            const fetchExpenses = async () => {
                 setLoading(true);
                 let query = supabase.from('expenses').select('*').order('date', { ascending: false });
-                
                 const { data, error } = await query;
-                if (error) {
-                    alert("データ取得エラー: " + error.message);
-                } else {
+                if (error) alert("データ取得エラー: " + error.message);
+                else {
                     setExpenses(data);
                     updateCharts(data);
                 }
                 setLoading(false);
             };
 
-            useEffect(() => { fetchData(); }, []);
+            // データ取得（ユーザーライセンス）
+            const fetchLicenses = async () => {
+                setLoading(true);
+                let query = supabase.from('licenses').select('*').order('created_at', { ascending: false });
+                const { data, error } = await query;
+                if (error) alert("ユーザー取得エラー: " + error.message);
+                else setLicenses(data);
+                setLoading(false);
+            };
 
-            // フィルタリング処理
+            useEffect(() => { 
+                if (view === 'dashboard') fetchExpenses();
+                if (view === 'users') fetchLicenses();
+            }, [view]);
+
+            // ライセンス承認処理（製品版にする）
+            const approveUser = async (email) => {
+                if(!confirm(`${email} を製品版（無期限）にアップグレードしますか？`)) return;
+                
+                const { error } = await supabase
+                    .from('licenses')
+                    .update({ is_paid: true })
+                    .eq('email', email);
+
+                if (error) alert("更新エラー: " + error.message);
+                else {
+                    alert("承認完了しました。");
+                    fetchLicenses(); // リスト更新
+                }
+            };
+
+            // ライセンス停止処理
+            const revokeUser = async (email) => {
+                if(!confirm(`${email} の製品版権限を取り消してトライアルに戻しますか？`)) return;
+                
+                const { error } = await supabase
+                    .from('licenses')
+                    .update({ is_paid: false })
+                    .eq('email', email);
+
+                if (error) alert("更新エラー: " + error.message);
+                else fetchLicenses();
+            };
+
+            // フィルタリング処理 (経費)
             const filteredData = expenses.filter(item => {
                 const itemMonth = item.date.split('/')[0] + '-' + item.date.split('/')[1].padStart(2, '0');
-                // 日付形式が YYYY/MM/DD の場合に対応 (簡易処理)
                 const isMonthMatch = item.date.includes(filterMonth.replace('-', '/')); 
                 const isUserMatch = filterUser ? item.user_email.includes(filterUser) : true;
                 return isMonthMatch && isUserMatch;
@@ -72,22 +113,18 @@
             // 集計
             const totalAmount = filteredData.reduce((sum, item) => sum + (item.amount || 0), 0);
             const userCounts = {};
-            filteredData.forEach(d => { userCounts[d.user_email] = (userCounts[d.user_email] || 0) + d.amount; });
+            expenses.forEach(d => { userCounts[d.user_email] = true; }); // 全ユーザーリスト用
 
-            // チャート描画 (Chart.js)
+            // チャート描画
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
 
             const updateCharts = (data) => {
                 if (!chartRef.current) return;
-                
-                // カテゴリ別集計
                 const categorySums = {};
                 data.forEach(d => { categorySums[d.category] = (categorySums[d.category] || 0) + d.amount; });
-                
                 const ctx = chartRef.current.getContext('2d');
                 if (chartInstance.current) chartInstance.current.destroy();
-
                 chartInstance.current = new Chart(ctx, {
                     type: 'doughnut',
                     data: {
@@ -101,7 +138,7 @@
                 });
             };
 
-            useEffect(() => { updateCharts(filteredData); }, [filteredData]);
+            useEffect(() => { if(view === 'dashboard') updateCharts(filteredData); }, [filteredData, view]);
 
             const downloadCSV = () => {
                 const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
@@ -121,81 +158,130 @@
                 <div className="min-h-screen flex flex-col">
                     {/* ヘッダー */}
                     <header className="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center">
-                        <div className="flex items-center space-x-2">
-                            <span className="bg-blue-600 text-xs px-2 py-1 rounded font-bold">ADMIN</span>
-                            <h1 className="text-xl font-bold tracking-widest">ロクマル 管理画面</h1>
+                        <div className="flex items-center space-x-4">
+                            <h1 className="text-xl font-bold tracking-widest flex items-center">
+                                <span className="bg-blue-600 text-xs px-2 py-1 rounded mr-2">ADMIN</span>
+                                ロクマル管理
+                            </h1>
+                            <nav className="flex space-x-1 bg-slate-800 rounded p-1">
+                                <button onClick={() => setView('dashboard')} className={`px-4 py-1 rounded text-sm ${view === 'dashboard' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>経費集計</button>
+                                <button onClick={() => setView('users')} className={`px-4 py-1 rounded text-sm ${view === 'users' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>ユーザー管理</button>
+                            </nav>
                         </div>
-                        <button onClick={fetchData} className="p-2 hover:bg-slate-800 rounded"><Icon name="refresh-cw"/></button>
+                        <button onClick={() => view === 'dashboard' ? fetchExpenses() : fetchLicenses()} className="p-2 hover:bg-slate-800 rounded"><Icon name="refresh-cw"/></button>
                     </header>
 
                     <div className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
                         
-                        {/* コントロールパネル */}
-                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1">対象月</label>
-                                <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="border p-2 rounded-lg text-sm" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1">担当者絞り込み</label>
-                                <select value={filterUser} onChange={e => setFilterUser(e.target.value)} className="border p-2 rounded-lg text-sm min-w-[200px]">
-                                    <option value="">全員</option>
-                                    {Object.keys(userCounts).map(email => <option key={email} value={email}>{email}</option>)}
-                                </select>
-                            </div>
-                            <div className="ml-auto">
-                                <button onClick={downloadCSV} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold flex items-center text-sm shadow-sm">
-                                    <Icon name="download" className="mr-2"/> CSV出力
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* ダッシュボード (グラフ & 数値) */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* 合計カード */}
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                <h3 className="text-slate-500 text-sm font-bold mb-2">期間合計金額</h3>
-                                <p className="text-4xl font-bold text-slate-800">¥ {totalAmount.toLocaleString()}</p>
-                                <p className="text-xs text-slate-400 mt-2">件数: {filteredData.length} 件</p>
-                            </div>
-
-                            {/* グラフ */}
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 md:col-span-2 h-64 relative">
-                                <h3 className="text-slate-500 text-sm font-bold absolute top-4 left-4">科目別内訳</h3>
-                                <div className="h-full w-full pt-6">
-                                    <canvas ref={chartRef}></canvas>
+                        {/* === ダッシュボード画面 === */}
+                        {view === 'dashboard' && (
+                            <React.Fragment>
+                                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">対象月</label>
+                                        <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="border p-2 rounded-lg text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">担当者絞り込み</label>
+                                        <select value={filterUser} onChange={e => setFilterUser(e.target.value)} className="border p-2 rounded-lg text-sm min-w-[200px]">
+                                            <option value="">全員</option>
+                                            {Object.keys(userCounts).map(email => <option key={email} value={email}>{email}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="ml-auto">
+                                        <button onClick={downloadCSV} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold flex items-center text-sm shadow-sm">
+                                            <Icon name="download" className="mr-2"/> CSV出力
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
 
-                        {/* 詳細テーブル */}
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-50 text-slate-500 border-b">
-                                    <tr>
-                                        <th className="p-4 font-bold">日付</th>
-                                        <th className="p-4 font-bold">担当者</th>
-                                        <th className="p-4 font-bold">科目</th>
-                                        <th className="p-4 font-bold">金額</th>
-                                        <th className="p-4 font-bold">メモ</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {filteredData.map(item => (
-                                        <tr key={item.id} className="hover:bg-slate-50">
-                                            <td className="p-4">{item.date}</td>
-                                            <td className="p-4 text-slate-600">{item.user_email}</td>
-                                            <td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{item.category}</span></td>
-                                            <td className="p-4 font-bold">¥ {item.amount.toLocaleString()}</td>
-                                            <td className="p-4 text-slate-400">{item.memo}</td>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                        <h3 className="text-slate-500 text-sm font-bold mb-2">期間合計金額</h3>
+                                        <p className="text-4xl font-bold text-slate-800">¥ {totalAmount.toLocaleString()}</p>
+                                        <p className="text-xs text-slate-400 mt-2">件数: {filteredData.length} 件</p>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 md:col-span-2 h-64 relative">
+                                        <h3 className="text-slate-500 text-sm font-bold absolute top-4 left-4">科目別内訳</h3>
+                                        <div className="h-full w-full pt-6">
+                                            <canvas ref={chartRef}></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-slate-50 text-slate-500 border-b">
+                                            <tr>
+                                                <th className="p-4 font-bold">日付</th>
+                                                <th className="p-4 font-bold">担当者</th>
+                                                <th className="p-4 font-bold">科目</th>
+                                                <th className="p-4 font-bold">金額</th>
+                                                <th className="p-4 font-bold">メモ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {filteredData.map(item => (
+                                                <tr key={item.id} className="hover:bg-slate-50">
+                                                    <td className="p-4">{item.date}</td>
+                                                    <td className="p-4 text-slate-600">{item.user_email}</td>
+                                                    <td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{item.category}</span></td>
+                                                    <td className="p-4 font-bold">¥ {item.amount.toLocaleString()}</td>
+                                                    <td className="p-4 text-slate-400">{item.memo}</td>
+                                                </tr>
+                                            ))}
+                                            {filteredData.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400">データがありません</td></tr>}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </React.Fragment>
+                        )}
+
+                        {/* === ユーザー管理画面 === */}
+                        {view === 'users' && (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                                    <h2 className="font-bold text-slate-700">ユーザーライセンス管理</h2>
+                                    <span className="text-xs text-slate-500">ログインしたユーザーが自動でここに表示されます</span>
+                                </div>
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-white text-slate-500 border-b">
+                                        <tr>
+                                            <th className="p-4 font-bold">メールアドレス</th>
+                                            <th className="p-4 font-bold">ステータス</th>
+                                            <th className="p-4 font-bold">開始日</th>
+                                            <th className="p-4 font-bold text-right">操作</th>
                                         </tr>
-                                    ))}
-                                    {filteredData.length === 0 && (
-                                        <tr><td colSpan="5" className="p-8 text-center text-slate-400">データがありません</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {licenses.map(lic => (
+                                            <tr key={lic.email} className="hover:bg-slate-50">
+                                                <td className="p-4 font-bold text-slate-700">{lic.email}</td>
+                                                <td className="p-4">
+                                                    {lic.is_paid ? (
+                                                        <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-bold border border-green-200">製品版 (無期限)</span>
+                                                    ) : (
+                                                        <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-xs font-bold border border-orange-200">トライアル中</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-4 text-slate-500">{new Date(lic.trial_start).toLocaleDateString()}</td>
+                                                <td className="p-4 text-right">
+                                                    {lic.is_paid ? (
+                                                        <button onClick={() => revokeUser(lic.email)} className="text-slate-400 hover:text-red-500 text-xs underline">解除する</button>
+                                                    ) : (
+                                                        <button onClick={() => approveUser(lic.email)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded shadow text-xs font-bold transition-colors">
+                                                            製品版にする
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {licenses.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-slate-400">ユーザーがいません</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
                     </div>
                 </div>
             );
