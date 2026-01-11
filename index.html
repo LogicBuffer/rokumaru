@@ -2,8 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <!-- viewport-fit=cover と interactive-widget=resizes-content でキーボードやバーの動きに対応 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>経費精算 ロクマル</title>
     
     <!-- React & Tailwind -->
@@ -17,62 +16,25 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        
-        /* 全画面固定設定（最強版） */
-        html {
-            height: -webkit-fill-available; /* iOS対策 */
-        }
+        /* シンプルイズベスト。余計な固定設定を排除 */
         body {
             margin: 0;
             padding: 0;
-            width: 100vw;
-            height: 100vh;
-            height: -webkit-fill-available; /* iOS対策 */
-            overflow: hidden; /* スクロール禁止 */
             background-color: #f8fafc;
+            color: #334155;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            touch-action: none; /* ピンチズームなども禁止 */
-        }
-
-        #root {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            background-color: white;
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-        }
-
-        /* PC表示設定 */
-        @media (min-width: 640px) {
-            body {
-                position: relative;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background-color: #0f172a;
-                height: 100vh;
-            }
-            #root {
-                width: 375px;
-                height: 812px;
-                max-height: 90vh;
-                border-radius: 40px;
-                border: 12px solid #1e293b;
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-                position: relative;
-                overflow: hidden;
-            }
+            -webkit-tap-highlight-color: transparent;
         }
         
-        /* セーフエリア余白 */
-        .safe-pb { padding-bottom: env(safe-area-inset-bottom, 20px); }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+        /* アプリ全体を包むコンテナ */
+        #root {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
     </style>
 </head>
 <body>
@@ -102,20 +64,44 @@
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
+        // --- ローディング画面 ---
         const LoadingScreen = () => (
-            <div className="flex flex-col items-center justify-center h-full bg-slate-50 w-full">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-                <p className="text-slate-400 text-sm font-bold tracking-wider">ROKUMARU</p>
+            <div className="flex flex-col items-center justify-center h-screen bg-white">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-slate-400 text-xs font-bold tracking-widest">ROKUMARU</p>
             </div>
         );
 
+        // --- 期限切れ画面（課金誘導） ---
+        const ExpiredScreen = ({ userId }) => (
+            <div className="flex flex-col h-screen bg-slate-900 text-white p-8 items-center justify-center text-center">
+                <div className="mb-6 p-4 bg-red-500/20 rounded-full text-red-400">
+                    <Icon name="lock" size={48} />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">試用期間が終了しました</h2>
+                <p className="text-slate-400 mb-8 text-sm">
+                    10日間の無料トライアル期間が過ぎました。<br/>
+                    引き続きご利用いただくには、製品版の購入をお願いいたします。
+                </p>
+                <div className="bg-slate-800 p-4 rounded-lg w-full mb-8 text-left">
+                    <p className="text-xs text-slate-500 mb-1">あなたのID</p>
+                    <p className="font-mono text-sm break-all">{userId}</p>
+                </div>
+                <button 
+                    onClick={() => alert("ここに販売サイト（Stripeやnoteなど）へのリンクを設定します。\n\n例: 購入後に管理者へIDを連絡すると、ロックが解除される仕組みです。")}
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-full shadow-lg transition-transform active:scale-95"
+                >
+                    製品版を購入する
+                </button>
+                <p className="mt-6 text-xs text-slate-600">
+                    ※購入済みの方は、反映までしばらくお待ちいただくか、アプリを再起動してください。
+                </p>
+            </div>
+        );
+
+        // --- 認証画面 ---
         const AuthScreen = ({ onLoginSuccess }) => {
             const [status, setStatus] = useState('idle');
-
-            const loginAsDemo = () => {
-                const demoUser = { email: "demo@example.com", user_metadata: { full_name: "デモユーザー" } };
-                onLoginSuccess(demoUser);
-            };
 
             const login = async () => {
                 if (!supabaseClient) return alert("Supabase設定エラー");
@@ -129,36 +115,37 @@
                 } catch (error) {
                     console.error(error);
                     setStatus('idle');
-                    if(confirm("ログインエラー: デモモードで起動しますか？")) loginAsDemo();
+                    alert("ログインエラーが発生しました。通信環境などを確認して再度お試しください。");
                 }
             };
 
             return (
-                <div className="flex flex-col h-full items-center justify-center bg-slate-900 text-white p-6 space-y-8 w-full">
+                <div className="flex flex-col h-screen items-center justify-center bg-slate-900 text-white p-6 space-y-10">
                     <div className="text-center">
-                        <h1 className="text-3xl font-bold tracking-widest mb-2">
-                            <span className="bg-blue-600 text-white text-sm px-2 py-1 rounded mr-2 align-middle">ZERO</span>
+                        <h1 className="text-4xl font-bold tracking-widest mb-2">
+                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2 align-middle">ZERO</span>
                             ロクマル
                         </h1>
-                        <p className="text-slate-400 text-sm">経費精算を、60秒で。</p>
+                        <p className="text-slate-400 text-sm">現場のための、秒速経費精算。</p>
                     </div>
                     <div className="w-full max-w-xs space-y-4">
                         {status === 'checking' ? (
                             <div className="text-center animate-pulse"><p>Googleへ移動中...</p></div>
                         ) : (
-                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-2 active:scale-95 transition-transform">
-                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6" />
-                                <span>Googleでログイン</span>
+                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-3 active:scale-95 transition-transform">
+                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" />
+                                <span>Googleではじめる</span>
                             </button>
                         )}
-                        <div className="pt-4 border-t border-slate-700 text-center">
-                             <button onClick={loginAsDemo} className="text-slate-500 text-xs hover:text-white underline">プレビュー用: デモモード</button>
-                        </div>
+                        <p className="text-xs text-center text-slate-500">
+                            まずは10日間、無料でお試しいただけます。
+                        </p>
                     </div>
                 </div>
             );
         };
 
+        // --- メインアプリ ---
         const RokumaruApp = () => {
             const [user, setUser] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
@@ -169,6 +156,10 @@
             const [timeLeft, setTimeLeft] = useState(60);
             const [capturedImage, setCapturedImage] = useState(null);
             const [isSending, setIsSending] = useState(false);
+            
+            // トライアル管理用
+            const [daysRemaining, setDaysRemaining] = useState(10);
+            const [isExpired, setIsExpired] = useState(false);
             
             const videoRef = useRef(null);
             const streamRef = useRef(null);
@@ -189,13 +180,13 @@
                 const checkSession = async () => {
                     if (!supabaseClient) { setIsLoading(false); return; }
                     const { data: { session } } = await supabaseClient.auth.getSession();
-                    if (session) await checkLicenseAndSetUser(session.user);
+                    if (session) await checkTrialAndSetUser(session.user);
                     else setIsLoading(false);
                     
                     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
                         if (event === 'SIGNED_IN' && session) {
                             setIsLoading(true);
-                            await checkLicenseAndSetUser(session.user);
+                            await checkTrialAndSetUser(session.user);
                         } else if (event === 'SIGNED_OUT') {
                             setUser(null);
                             setIsLoading(false);
@@ -206,18 +197,59 @@
                 checkSession();
             }, []);
 
-            const checkLicenseAndSetUser = async (authUser) => {
+            // ★トライアル期間チェックロジック
+            const checkTrialAndSetUser = async (authUser) => {
                 try {
-                    const { data, error } = await supabaseClient.from('licenses').select('*').eq('email', authUser.email).single();
-                    if (data) setUser(authUser);
-                    else { alert("ライセンスが見つかりません。"); await supabaseClient.auth.signOut(); }
+                    // 1. ユーザーがDBにいるか確認
+                    let { data: license, error } = await supabaseClient
+                        .from('licenses')
+                        .select('*')
+                        .eq('email', authUser.email)
+                        .single();
+
+                    // 2. いなければ新規登録（トライアル開始）
+                    if (!license) {
+                        const { data: newLicense, error: insertError } = await supabaseClient
+                            .from('licenses')
+                            .insert([{ email: authUser.email }]) // デフォルトで現在時刻が入る
+                            .select()
+                            .single();
+                        
+                        if (insertError) throw insertError;
+                        license = newLicense;
+                    }
+
+                    // 3. 期限チェック
+                    if (license.is_paid) {
+                        // 課金済みなら無制限
+                        setDaysRemaining(9999);
+                        setIsExpired(false);
+                    } else {
+                        // トライアル期間計算
+                        const start = new Date(license.trial_start);
+                        const now = new Date();
+                        const diffTime = Math.abs(now - start);
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                        const remaining = 10 - diffDays;
+
+                        if (remaining < 0) {
+                            setIsExpired(true);
+                        } else {
+                            setDaysRemaining(remaining);
+                            setIsExpired(false);
+                        }
+                    }
+                    setUser(authUser);
+
                 } catch (err) {
-                    await supabaseClient.auth.signOut();
+                    console.error("Trial Check Error:", err);
+                    alert("通信エラーが発生しました。");
                 } finally {
                     setIsLoading(false);
                 }
             };
 
+            // 以降、既存機能は同じ...
             useEffect(() => {
                 let timer;
                 if (screen === 'input' && timeLeft > 0) {
@@ -282,7 +314,6 @@
                 setScreen('home');
             };
 
-            // ゴミ箱機能（データ削除）
             const deleteExpense = (id) => {
                 if(confirm("この経費データを削除しますか？")) {
                     const updated = expenses.filter(e => e.id !== id);
@@ -314,20 +345,30 @@
                 if(confirm("ログアウトしますか？")) { if (supabaseClient) await supabaseClient.auth.signOut(); setUser(null); }
             }
 
+            // --- レンダリング制御 ---
             if (isLoading) return <LoadingScreen />;
-            if (!user) return <AuthScreen onLoginSuccess={setUser} />;
+            if (!user) return <AuthScreen onLoginSuccess={(u, days, paid) => { setUser(u); setDaysRemaining(days); setIsExpired(false); }} />;
+            
+            // ★期限切れならロック画面を表示
+            if (isExpired) return <ExpiredScreen userId={user.email} />;
 
+            // アプリ画面 (Flexboxで縦並び)
             if (screen === 'home') {
                 const total = expenses.reduce((a,c) => a + c.amount, 0);
                 return (
-                    <div className="flex flex-col h-full bg-slate-50 w-full overflow-hidden">
+                    <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
                         <div className="p-4 bg-white shadow-sm flex justify-between items-center shrink-0">
                             <h1 className="text-xl font-bold flex items-center text-slate-800"><span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2">ZERO</span>ロクマル</h1>
                             <button onClick={logout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8 overflow-y-auto">
                             <div className="w-full bg-white p-6 rounded-2xl shadow border border-slate-200 text-center relative">
-                                <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-bl">Supabase</div>
+                                {daysRemaining < 9999 && (
+                                    <div className={`absolute top-0 right-0 text-white text-[10px] px-2 py-0.5 rounded-bl ${daysRemaining <= 3 ? 'bg-red-500' : 'bg-blue-500'}`}>
+                                        試用残り {daysRemaining}日
+                                    </div>
+                                )}
+                                {daysRemaining >= 9999 && <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-bl">製品版</div>}
                                 <p className="text-slate-500 text-xs mb-1 truncate px-4">{user.email}</p>
                                 <p className="text-4xl font-bold text-slate-800">¥ {total.toLocaleString()}</p>
                             </div>
@@ -338,7 +379,7 @@
                                 </button>
                             </div>
                         </div>
-                        <div className="p-4 bg-white border-t safe-pb shrink-0">
+                        <div className="p-4 bg-white border-t shrink-0 safe-area-pb">
                             <button onClick={() => setScreen('history')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-lg font-bold flex justify-center items-center"><Icon name="file-text" size={18} className="mr-2"/>履歴 / 出力</button>
                         </div>
                     </div>
@@ -346,9 +387,9 @@
             }
 
             if (screen === 'camera') return (
-                <div className="h-full bg-black relative flex flex-col w-full overflow-hidden">
+                <div className="h-full bg-black relative flex flex-col overflow-hidden">
                     <video ref={videoRef} className="flex-1 object-cover w-full" autoPlay playsInline muted></video>
-                    <div className="h-32 bg-black/80 flex items-center justify-center relative safe-pb shrink-0">
+                    <div className="h-32 bg-black/80 flex items-center justify-center relative shrink-0">
                         <button onClick={() => { stopCamera(); setScreen('home'); }} className="absolute left-8 text-white p-4"><Icon name="x" /></button>
                         <button onClick={takePhoto} className="w-20 h-20 bg-white rounded-full border-4 border-slate-300 active:bg-slate-200"></button>
                     </div>
@@ -356,7 +397,7 @@
             );
 
             if (screen === 'input') return (
-                <div className="flex flex-col h-full bg-slate-50 w-full overflow-hidden">
+                <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
                     <div className="bg-slate-800 text-white p-3 flex justify-between items-center shrink-0">
                         <div className="w-12 h-16 bg-slate-700 rounded overflow-hidden border border-slate-600">
                              {capturedImage && <img src={capturedImage} className="w-full h-full object-cover" />}
@@ -384,14 +425,14 @@
                             <button onClick={() => setAmount(a=>a.slice(0,-1))} className="text-slate-500 border-slate-50 border bg-slate-50 flex items-center justify-center touch-manipulation"><Icon name="delete" /></button>
                         </div>
                     </div>
-                    <button onClick={saveExpense} disabled={!amount} className={`w-full py-4 text-white font-bold text-xl flex items-center justify-center shadow-lg shrink-0 safe-pb ${amount ? 'bg-blue-600 active:bg-blue-700' : 'bg-slate-400'}`}>
+                    <button onClick={saveExpense} disabled={!amount} className={`w-full py-4 text-white font-bold text-xl flex items-center justify-center shadow-lg shrink-0 ${amount ? 'bg-blue-600 active:bg-blue-700' : 'bg-slate-400'}`}>
                         {isSending ? "送信中..." : "保存＆クラウドへ"}
                     </button>
                 </div>
             );
 
             if (screen === 'history') return (
-                <div className="flex flex-col h-full bg-slate-50 w-full overflow-hidden">
+                <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
                     <div className="p-4 bg-white shadow-sm flex items-center justify-between shrink-0">
                         <div className="flex items-center">
                             <button onClick={() => setScreen('home')} className="mr-4"><Icon name="chevron-left" /></button>
@@ -401,8 +442,7 @@
                             <Icon name="download" size={14} className="mr-1"/> CSV
                         </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-2 safe-pb">
-                         {expenses.length === 0 && <div className="text-center text-slate-400 mt-10">データなし</div>}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
                          {expenses.map(e => (
                              <div key={e.id} className="bg-white p-3 rounded border flex justify-between items-center">
                                  <div><div className="text-xs text-slate-500">{e.date}</div><div className="font-bold">¥{e.amount} <span className="text-xs font-normal bg-slate-100 px-1">{e.category}</span></div></div>
