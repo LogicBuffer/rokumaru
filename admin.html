@@ -13,8 +13,12 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- Supabase & Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- 安定性のために unpkg を使用 -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- ★設定ファイル読み込み -->
+    <script src="./config.js"></script>
 
     <style>
         body { background-color: #f1f5f9; font-family: sans-serif; }
@@ -24,11 +28,15 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- 設定エリア (アプリと同じキーを使用) ---
-        const supabaseUrl = "https://oebdycuvvajivxumvgoo.supabase.co";
-        const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYmR5Y3V2dmFqaXZ4dW12Z29vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY3OTgsImV4cCI6MjA4MzU0Mjc5OH0.WjrWr-WpBhBpVRc2qLTDUtaqPgXrHSBf4WcO-NzhufA";
+        // --- 設定読み込み ---
+        const config = window.ROKUMARU_CONFIG || {
+            supabaseUrl: "https://oebdycuvvajivxumvgoo.supabase.co",
+            supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYmR5Y3V2dmFqaXZ4dW12Z29vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY3OTgsImV4cCI6MjA4MzU0Mjc5OH0.WjrWr-WpBhBpVRc2qLTDUtaqPgXrHSBf4WcO-NzhufA"
+        };
         
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+        // グローバル変数として宣言（初期化はAppコンポーネントで行う）
+        let supabase = null;
+
         const { useState, useEffect, useRef } = React;
 
         const Icon = ({ name, size = 16, className = "" }) => {
@@ -36,8 +44,53 @@
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
+        // --- 認証画面 (管理者用) ---
+        const AuthScreen = ({ onLoginSuccess }) => {
+            const [status, setStatus] = useState('idle');
+
+            const login = async () => {
+                if (!supabase) return alert("システムエラー: Supabaseクライアントが初期化されていません。リロードしてください。");
+                try {
+                    setStatus('checking');
+                    const { error } = await supabase.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: { redirectTo: window.location.href }
+                    });
+                    if (error) throw error;
+                } catch (error) {
+                    console.error(error);
+                    setStatus('idle');
+                    alert("ログインエラーが発生しました: " + error.message);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6">
+                    <div className="w-full max-w-md bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 text-center">
+                        <h1 className="text-2xl font-bold tracking-widest mb-2 flex items-center justify-center">
+                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-3">ADMIN</span>
+                            ロクマル 管理画面
+                        </h1>
+                        <p className="text-slate-400 text-sm mb-8">経営者・管理者用ログイン</p>
+
+                        {status === 'checking' ? (
+                            <div className="text-center animate-pulse py-3"><p>認証サイトへ移動中...</p></div>
+                        ) : (
+                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-3 rounded-lg shadow hover:bg-slate-100 transition-colors flex items-center justify-center space-x-3">
+                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" />
+                                <span>Googleアカウントでログイン</span>
+                            </button>
+                        )}
+                        <p className="text-xs text-slate-500 mt-6">
+                            ※許可されたアカウントのみアクセス可能です
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
         // --- 管理画面メイン ---
-        const AdminDashboard = () => {
+        const AdminDashboard = ({ user, onLogout }) => {
             const [view, setView] = useState('dashboard'); // dashboard | users
             const [expenses, setExpenses] = useState([]);
             const [licenses, setLicenses] = useState([]);
@@ -168,7 +221,11 @@
                                 <button onClick={() => setView('users')} className={`px-4 py-1 rounded text-sm ${view === 'users' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>ユーザー管理</button>
                             </nav>
                         </div>
-                        <button onClick={() => view === 'dashboard' ? fetchExpenses() : fetchLicenses()} className="p-2 hover:bg-slate-800 rounded"><Icon name="refresh-cw"/></button>
+                        <div className="flex items-center space-x-4">
+                            <span className="text-xs text-slate-400 hidden md:inline">{user.email}</span>
+                            <button onClick={() => view === 'dashboard' ? fetchExpenses() : fetchLicenses()} className="p-2 hover:bg-slate-800 rounded"><Icon name="refresh-cw"/></button>
+                            <button onClick={onLogout} className="p-2 hover:bg-red-900/50 text-red-300 rounded"><Icon name="log-out"/></button>
+                        </div>
                     </header>
 
                     <div className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
@@ -287,8 +344,65 @@
             );
         };
 
+        // --- ルートコンポーネント (認証状態管理) ---
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [initError, setInitError] = useState(null);
+
+            useEffect(() => {
+                const initSupabase = async () => {
+                    // Supabase SDKの読み込み待ち (最大2秒待機)
+                    let attempts = 0;
+                    while (!window.supabase && attempts < 20) {
+                        await new Promise(r => setTimeout(r, 100));
+                        attempts++;
+                    }
+
+                    if (!window.supabase) {
+                        setInitError("Supabase SDKの読み込みに失敗しました。インターネット接続を確認してリロードしてください。");
+                        setLoading(false);
+                        return;
+                    }
+
+                    // 初期化
+                    try {
+                        if (!supabase) {
+                            supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
+                        }
+                        
+                        const { data: { session } } = await supabase.auth.getSession();
+                        setUser(session && session.user ? session.user : null);
+                        
+                        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+                            setUser(session && session.user ? session.user : null);
+                        });
+                        
+                        setLoading(false);
+                        return () => subscription.unsubscribe();
+                    } catch (e) {
+                        console.error("Initialization error:", e);
+                        setInitError("アプリケーションの初期化に失敗しました。");
+                        setLoading(false);
+                    }
+                };
+
+                initSupabase();
+            }, []);
+
+            const logout = async () => {
+                if(supabase) await supabase.auth.signOut();
+            };
+
+            if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">Loading...</div>;
+            if (initError) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-red-400 p-4">{initError}</div>;
+            if (!user) return <AuthScreen />;
+
+            return <AdminDashboard user={user} onLogout={logout} />;
+        };
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<AdminDashboard />);
+        root.render(<App />);
     </script>
 </body>
 </html>
