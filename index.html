@@ -3,94 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-    <title>経費精算 ロクマル</title>
+    <title>経費精算 ロクマル (Robust Ver)</title>
     
-    <!-- React & Tailwind -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- React & Tailwind (これらは読み込めているようなのでそのまま) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Supabase SDK -->
-    <!-- ★修正: 安定性の高い jsDelivr の UMD版 に変更 -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
+    <!-- ★重要: Supabase SDKのscriptタグはここから削除し、Reactの中で動的に読み込みます -->
 
-    <!-- ★設定ファイル読み込み -->
+    <!-- 設定ファイル -->
     <script src="./config.js"></script>
 
     <style>
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         
-        /* 全画面固定設定 */
-        html {
-            height: -webkit-fill-available;
-        }
+        html { height: -webkit-fill-available; }
         body {
-            margin: 0;
-            padding: 0;
-            width: 100vw;
-            height: 100vh;
-            height: -webkit-fill-available;
-            overflow: hidden;
-            background-color: #f8fafc;
+            margin: 0; padding: 0; width: 100vw; height: 100vh; height: -webkit-fill-available;
+            overflow: hidden; background-color: #f8fafc;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             touch-action: none;
         }
-
-        #root {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            background-color: white;
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-        }
-
-        /* PC表示設定 */
-        @media (min-width: 640px) {
-            body {
-                position: relative;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background-color: #0f172a;
-                height: 100vh;
-            }
-            #root {
-                width: 375px;
-                height: 812px;
-                max-height: 90vh;
-                border-radius: 40px;
-                border: 12px solid #1e293b;
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-                position: relative;
-                overflow: hidden;
-            }
-        }
+        #root { width: 100%; height: 100%; display: flex; flex-direction: column; background-color: white; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
         
+        /* エラー表示用オーバーレイ */
+        #error-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); color: white; z-index: 9999;
+            flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center;
+        }
+
+        @media (min-width: 640px) {
+            body { position: relative; display: flex; align-items: center; justify-content: center; background-color: #0f172a; height: 100vh; }
+            #root { width: 375px; height: 812px; max-height: 90vh; border-radius: 40px; border: 12px solid #1e293b; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); position: relative; overflow: hidden; }
+        }
         .safe-pb { padding-bottom: env(safe-area-inset-bottom, 20px); }
     </style>
 </head>
 <body>
 
     <div id="root"></div>
+    <div id="error-overlay">
+        <h2 class="text-xl font-bold mb-4 text-red-400">システムエラー</h2>
+        <p id="error-msg" class="text-sm mb-6"></p>
+        <button onclick="window.location.reload()" class="bg-white text-black px-6 py-2 rounded font-bold">再読み込み</button>
+    </div>
 
     <script type="text/babel">
         // --- 設定読み込み ---
         const config = window.ROKUMARU_CONFIG || {
-            // 予備設定 (config.js読み込み失敗時用)
             supabaseUrl: "https://oebdycuvvajivxumvgoo.supabase.co",
             supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYmR5Y3V2dmFqaXZ4dW12Z29vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY3OTgsImV4cCI6MjA4MzU0Mjc5OH0.WjrWr-WpBhBpVRc2qLTDUtaqPgXrHSBf4WcO-NzhufA"
         };
-        
-        // グローバル変数として宣言
-        let supabase = null;
+
+        // グローバル変数
+        let supabaseClient = null;
 
         const { useState, useEffect, useRef } = React;
 
@@ -99,54 +70,68 @@
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
-        // --- ローディング画面 ---
-        const LoadingScreen = () => (
+        // --- SDK動的ローダー ---
+        const loadSupabaseSDK = () => {
+            return new Promise((resolve, reject) => {
+                if (window.supabase) return resolve();
+
+                // メインCDN: jsDelivr, サブCDN: unpkg
+                const sources = [
+                    "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+                    "https://unpkg.com/@supabase/supabase-js@2"
+                ];
+
+                const tryLoad = (index) => {
+                    if (index >= sources.length) {
+                        reject(new Error("すべての接続先からSupabase SDKを読み込めませんでした。"));
+                        return;
+                    }
+                    const script = document.createElement('script');
+                    script.src = sources[index];
+                    script.onload = () => resolve();
+                    script.onerror = () => {
+                        console.warn(`Failed to load from ${sources[index]}, trying next...`);
+                        tryLoad(index + 1);
+                    };
+                    document.head.appendChild(script);
+                };
+
+                tryLoad(0);
+            });
+        };
+
+        // --- コンポーネント群 ---
+        const LoadingScreen = ({ message }) => (
             <div className="flex flex-col items-center justify-center h-full bg-slate-50 w-full">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
                 <p className="text-slate-400 text-sm font-bold tracking-wider">ROKUMARU</p>
+                <p className="text-xs text-slate-400 mt-2">{message}</p>
             </div>
         );
 
-        // --- 期限切れ画面 ---
         const ExpiredScreen = ({ userId }) => {
-            // ★Stripeの支払いリンク（https://buy.stripe.com/6oU9ASdNN2RG42D0qWc7u01）
-            const stripeUrl = "https://buy.stripe.com/test_..."; 
-
+            const stripeUrl = "https://buy.stripe.com/6oU9ASdNN2RG42D0qWc7u01";
             return (
                 <div className="flex flex-col h-full bg-slate-900 text-white p-8 items-center justify-center text-center w-full">
-                    <div className="mb-6 p-4 bg-red-500/20 rounded-full text-red-400">
-                        <Icon name="lock" size={48} />
-                    </div>
+                    <div className="mb-6 p-4 bg-red-500/20 rounded-full text-red-400"><Icon name="lock" size={48} /></div>
                     <h2 className="text-2xl font-bold mb-2">試用期間が終了しました</h2>
-                    <p className="text-slate-400 mb-8 text-sm">
-                        10日間の無料トライアル期間が過ぎました。<br/>
-                        引き続きご利用いただくには、製品版の購入をお願いいたします。
-                    </p>
+                    <p className="text-slate-400 mb-8 text-sm">10日間の無料トライアル期間が過ぎました。<br/>引き続きご利用いただくには、製品版の購入をお願いいたします。</p>
                     <div className="bg-slate-800 p-4 rounded-lg w-full mb-8 text-left">
                         <p className="text-xs text-slate-500 mb-1">アカウントID</p>
                         <p className="font-mono text-sm break-all">{userId}</p>
                     </div>
-                    <a 
-                        href={stripeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-full shadow-lg transition-transform active:scale-95 block"
-                    >
-                        製品版を購入する (¥19,800)
-                    </a>
+                    <a href={stripeUrl} target="_blank" rel="noopener noreferrer" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-full shadow-lg transition-transform active:scale-95 block">製品版を購入する (¥19,800)</a>
                 </div>
             );
         };
 
-        // --- 認証画面 ---
-        const AuthScreen = ({ onLoginSuccess }) => {
+        const AuthScreen = () => {
             const [status, setStatus] = useState('idle');
-
             const login = async () => {
-                if (!supabase) return alert("設定エラー: Supabaseクライアントが初期化されていません。リロードしてください。");
+                if (!supabaseClient) return alert("システム初期化エラー。再読み込みしてください。");
                 try {
                     setStatus('checking');
-                    const { error } = await supabase.auth.signInWithOAuth({
+                    const { error } = await supabaseClient.auth.signInWithOAuth({
                         provider: 'google',
                         options: { redirectTo: window.location.href }
                     });
@@ -154,37 +139,25 @@
                 } catch (error) {
                     console.error(error);
                     setStatus('idle');
-                    alert("ログインエラーが発生しました: " + error.message);
+                    alert("ログインエラー: " + error.message);
                 }
             };
-
             return (
                 <div className="flex flex-col h-full items-center justify-center bg-slate-900 text-white p-6 space-y-10 w-full">
                     <div className="text-center">
-                        <h1 className="text-4xl font-bold tracking-widest mb-2">
-                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2 align-middle">ZERO</span>
-                            ロクマル
-                        </h1>
+                        <h1 className="text-4xl font-bold tracking-widest mb-2"><span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2 align-middle">ZERO</span>ロクマル</h1>
                         <p className="text-slate-400 text-sm">現場のための、秒速経費精算。</p>
                     </div>
                     <div className="w-full max-w-xs space-y-4">
-                        {status === 'checking' ? (
-                            <div className="text-center animate-pulse"><p>Googleへ移動中...</p></div>
-                        ) : (
-                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-3 active:scale-95 transition-transform">
-                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" />
-                                <span>Googleではじめる</span>
-                            </button>
+                        {status === 'checking' ? <div className="text-center animate-pulse"><p>Googleへ移動中...</p></div> : (
+                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-3 active:scale-95 transition-transform"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" /><span>Googleではじめる</span></button>
                         )}
-                        <p className="text-xs text-center text-slate-500">
-                            まずは10日間、無料でお試しいただけます。
-                        </p>
+                        <p className="text-xs text-center text-slate-500">まずは10日間、無料でお試しいただけます。</p>
                     </div>
                 </div>
             );
         };
 
-        // --- メインアプリ ---
         const RokumaruApp = ({ user, logout }) => {
             const [screen, setScreen] = useState('home');
             const [amount, setAmount] = useState('');
@@ -193,12 +166,9 @@
             const [timeLeft, setTimeLeft] = useState(60);
             const [capturedImage, setCapturedImage] = useState(null);
             const [isSending, setIsSending] = useState(false);
-            
-            // トライアル管理
-            const [daysRemaining, setDaysRemaining] = useState(null); // null初期値
+            const [daysRemaining, setDaysRemaining] = useState(null);
             const [isExpired, setIsExpired] = useState(false);
             const [isCheckingLicense, setIsCheckingLicense] = useState(true);
-            
             const videoRef = useRef(null);
             const streamRef = useRef(null);
 
@@ -213,81 +183,43 @@
 
             useEffect(() => {
                 const initData = async () => {
-                    // 1. ローカルデータ読み込み
                     const savedData = localStorage.getItem('rokumaru_data');
                     if (savedData) setExpenses(JSON.parse(savedData));
-
-                    // 2. ライセンスチェック & データ同期
-                    if (supabase && user) {
-                        await checkTrialAndSync(user);
-                    }
+                    if (supabaseClient && user) await checkTrialAndSync(user);
                 };
                 initData();
             }, [user]);
 
-            // ★トライアル期間チェック & データ同期
             const checkTrialAndSync = async (authUser) => {
                 setIsCheckingLicense(true);
                 try {
-                    // ライセンス確認
-                    let { data: license, error } = await supabase
-                        .from('licenses')
-                        .select('*')
-                        .eq('email', authUser.email)
-                        .single();
-
+                    let { data: license, error } = await supabaseClient.from('licenses').select('*').eq('email', authUser.email).single();
                     if (!license && !error) {
-                        // 新規作成
-                        const { data: newLicense, error: insertError } = await supabase
-                            .from('licenses')
-                            .insert([{ email: authUser.email }])
-                            .select()
-                            .single();
+                        const { data: newLicense, error: insertError } = await supabaseClient.from('licenses').insert([{ email: authUser.email }]).select().single();
                         if (!insertError) license = newLicense;
                     }
-
                     if (license) {
-                        if (license.is_paid) {
-                            setDaysRemaining(9999);
-                            setIsExpired(false);
-                        } else {
-                            const start = new Date(license.trial_start);
-                            const now = new Date();
-                            const diffTime = Math.abs(now - start);
-                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-                            const remaining = 10 - diffDays;
+                        if (license.is_paid) { setDaysRemaining(9999); setIsExpired(false); }
+                        else {
+                            const remaining = 10 - Math.ceil(Math.abs(new Date() - new Date(license.trial_start)) / (1000 * 60 * 60 * 24));
                             setDaysRemaining(remaining < 0 ? 0 : remaining);
                             setIsExpired(remaining < 0);
                         }
                     }
-                    
-                    // データ同期 (クラウドから最新データを取得)
                     await fetchExpenses(authUser.email);
-
-                } catch (err) {
-                    console.error("Init Error:", err);
-                    // エラーでもとりあえずローカルデータで動かすか、アラート出すか
-                } finally {
-                    setIsCheckingLicense(false);
-                }
+                } catch (err) { console.error("Init Error:", err); } 
+                finally { setIsCheckingLicense(false); }
             };
 
             const fetchExpenses = async (email) => {
-                if (!supabase) return;
-                const { data } = await supabase
-                    .from('expenses')
-                    .select('*')
-                    .eq('user_email', email)
-                    .order('created_at', { ascending: false });
-                
+                if (!supabaseClient) return;
+                const { data } = await supabaseClient.from('expenses').select('*').eq('user_email', email).order('created_at', { ascending: false });
                 if (data) setExpenses(data);
             };
 
             useEffect(() => {
                 let timer;
-                if (screen === 'input' && timeLeft > 0) {
-                    timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
-                }
+                if (screen === 'input' && timeLeft > 0) timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
                 return () => clearInterval(timer);
             }, [screen, timeLeft]);
 
@@ -300,63 +232,43 @@
                 } catch (err) { alert("カメラエラー: " + err); setScreen('input'); }
             };
 
-            const stopCamera = () => {
-                if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-            };
+            const stopCamera = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
 
             const takePhoto = () => {
                 if (videoRef.current) {
                     const canvas = document.createElement('canvas');
                     const MAX_SIZE = 1024;
-                    let w = videoRef.current.videoWidth;
-                    let h = videoRef.current.videoHeight;
+                    let w = videoRef.current.videoWidth; let h = videoRef.current.videoHeight;
                     if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
                     canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(videoRef.current, 0, 0, w, h);
                     setCapturedImage(canvas.toDataURL('image/jpeg', 0.7));
                 }
-                stopCamera();
-                setScreen('input');
-                setTimeLeft(60);
-                setAmount('');
-                setCategory(null);
+                stopCamera(); setScreen('input'); setTimeLeft(60); setAmount(''); setCategory(null);
             };
 
             const saveExpense = async () => {
                 if(isSending) return;
                 setIsSending(true);
                 const now = new Date();
-                const newItem = { 
-                    date: now.toLocaleString(), 
-                    amount: parseInt(amount) || 0, 
-                    category: category ? category.name : '未分類', 
-                    user_email: user.email, 
-                    memo: 'アプリ入力'
-                };
-
-                if (supabase) {
+                const newItem = { date: now.toLocaleString(), amount: parseInt(amount) || 0, category: category ? category.name : '未分類', user_email: user.email, memo: 'アプリ入力' };
+                if (supabaseClient) {
                     try {
-                        const { error } = await supabase.from('expenses').insert([newItem]);
+                        const { error } = await supabaseClient.from('expenses').insert([newItem]);
                         if (error) throw error;
                         await fetchExpenses(user.email);
                         alert("保存＆クラウド同期完了！");
-                    } catch (e) { 
-                        console.error(e); 
-                        alert("保存エラー: ネット接続を確認してください"); 
-                    }
+                    } catch (e) { alert("保存エラー: ネット接続を確認してください"); }
                 }
-                setIsSending(false);
-                setScreen('home');
+                setIsSending(false); setScreen('home');
             };
 
             const deleteExpense = async (id) => {
-                if(confirm("この経費データをクラウドから削除しますか？")) {
-                    if (supabase) {
-                        try {
-                            await supabase.from('expenses').delete().eq('id', id);
-                            await fetchExpenses(user.email);
-                        } catch (e) { console.error(e); alert("削除エラー"); }
+                if(confirm("この経費データを削除しますか？")) {
+                    if (supabaseClient) {
+                        try { await supabaseClient.from('expenses').delete().eq('id', id); await fetchExpenses(user.email); }
+                        catch (e) { alert("削除エラー"); }
                     }
                 }
             };
@@ -365,37 +277,29 @@
                 if (expenses.length === 0) return alert("データがありません");
                 const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
                 let csvContent = "日付,金額,科目,メモ,アカウント\n";
-                expenses.forEach(e => {
-                    csvContent += `${(e.date||'').replace(',', '')},${e.amount},${e.category},${(e.memo||'').replace(',', ' ')},${e.user_email||''}\n`;
-                });
+                expenses.forEach(e => { csvContent += `${(e.date||'').replace(',', '')},${e.amount},${e.category},${(e.memo||'').replace(',', ' ')},${e.user_email||''}\n`; });
                 const blob = new Blob([bom, csvContent], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                const dateStr = new Date().toISOString().slice(0,10);
-                a.download = `rokumaru_export_${dateStr}.csv`;
-                a.click();
+                const a = document.createElement('a'); a.href = url; a.download = `rokumaru_${new Date().toISOString().slice(0,10)}.csv`; a.click();
             };
 
-            if (isCheckingLicense) return <LoadingScreen />;
+            const handleLogout = async () => { if(confirm("ログアウトしますか？")) { if (supabaseClient) await supabaseClient.auth.signOut(); setUser(null); } };
+
+            if (isCheckingLicense) return <LoadingScreen message="ライセンス確認中..." />;
             if (isExpired) return <ExpiredScreen userId={user.email} />;
 
-            // --- UIコンポーネント ---
+            // UI
             if (screen === 'home') {
                 const total = expenses.reduce((a,c) => a + (c.amount || 0), 0);
                 return (
                     <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
                         <div className="p-4 bg-white shadow-sm flex justify-between items-center shrink-0">
                             <h1 className="text-xl font-bold flex items-center text-slate-800"><span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2">ZERO</span>ロクマル</h1>
-                            <button onClick={logout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
+                            <button onClick={handleLogout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8 overflow-y-auto">
                             <div className="w-full bg-white p-6 rounded-2xl shadow border border-slate-200 text-center relative">
-                                {daysRemaining !== null && daysRemaining < 9999 && (
-                                    <div className={`absolute top-0 right-0 text-white text-[10px] px-2 py-0.5 rounded-bl ${daysRemaining <= 3 ? 'bg-red-500' : 'bg-blue-500'}`}>
-                                        試用残り {daysRemaining}日
-                                    </div>
-                                )}
+                                {daysRemaining !== null && daysRemaining < 9999 && <div className={`absolute top-0 right-0 text-white text-[10px] px-2 py-0.5 rounded-bl ${daysRemaining <= 3 ? 'bg-red-500' : 'bg-blue-500'}`}>試用残り {daysRemaining}日</div>}
                                 {daysRemaining >= 9999 && <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-bl">製品版</div>}
                                 <p className="text-slate-500 text-xs mb-1 truncate px-4">{user.email}</p>
                                 <p className="text-4xl font-bold text-slate-800">¥ {total.toLocaleString()}</p>
@@ -413,7 +317,6 @@
                     </div>
                 );
             }
-
             if (screen === 'camera') return (
                 <div className="h-full bg-black relative flex flex-col overflow-hidden">
                     <video ref={videoRef} className="flex-1 object-cover w-full" autoPlay playsInline muted></video>
@@ -423,7 +326,6 @@
                     </div>
                 </div>
             );
-
             if (screen === 'input') return (
                 <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
                     <div className="bg-slate-800 text-white p-3 flex justify-between items-center shrink-0">
@@ -458,7 +360,6 @@
                     </button>
                 </div>
             );
-
             if (screen === 'history') return (
                 <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
                     <div className="p-4 bg-white shadow-sm flex items-center justify-between shrink-0">
@@ -484,71 +385,46 @@
                     </div>
                 </div>
             );
-
             return null;
         };
 
-        // --- ルートコンポーネント (認証状態管理) ---
         const App = () => {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
-            const [initError, setInitError] = useState(null);
 
             useEffect(() => {
-                const initSupabase = async () => {
-                    let attempts = 0;
-                    // 最大10秒待機（50→100に増加）
-                    while (!window.supabase && attempts < 100) {
-                        await new Promise(r => setTimeout(r, 100));
-                        attempts++;
-                    }
-
-                    if (!window.supabase) {
-                        setInitError("Supabase SDKの読み込みに失敗しました。インターネット接続を確認してリロードしてください。");
-                        setLoading(false);
-                        return;
-                    }
-
-                    // 初期化
+                const initApp = async () => {
                     try {
-                        if (!supabase) {
-                            supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
+                        // 1. Supabase SDKのロードを待機
+                        await loadSupabaseSDK();
+                        
+                        // 2. クライアント作成
+                        if (!supabaseClient) {
+                            if (!config.supabaseUrl || !config.supabaseKey) throw new Error("Config Missing");
+                            supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
                         }
-                        
-                        const { data: { session } } = await supabase.auth.getSession();
-                        // 三項演算子で安全にアクセス
-                        setUser(session && session.user ? session.user : null);
-                        
-                        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-                            setUser(session && session.user ? session.user : null);
+
+                        // 3. セッションチェック
+                        const { data: { session } } = await supabaseClient.auth.getSession();
+                        setUser(session ? session.user : null);
+
+                        supabaseClient.auth.onAuthStateChange((_event, session) => {
+                            setUser(session ? session.user : null);
                         });
-                        
+
                         setLoading(false);
-                        return () => subscription.unsubscribe();
                     } catch (e) {
-                        console.error("Initialization error:", e);
-                        setInitError("アプリケーションの初期化に失敗しました。");
-                        setLoading(false);
+                        console.error(e);
+                        document.getElementById('error-msg').textContent = e.message;
+                        document.getElementById('error-overlay').style.display = 'flex';
                     }
                 };
-
-                initSupabase();
+                initApp();
             }, []);
 
-            const logout = async () => {
-                if(supabase) await supabase.auth.signOut();
-            };
-
-            if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">Loading...</div>;
-            if (initError) return (
-                <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-red-400 p-4">
-                    <p className="mb-4">{initError}</p>
-                    <button onClick={() => window.location.reload()} className="px-4 py-2 bg-slate-800 rounded hover:bg-slate-700 text-white transition-colors">再読み込み</button>
-                </div>
-            );
+            if (loading) return <LoadingScreen message="システム起動中..." />;
             if (!user) return <AuthScreen />;
-
-            return <RokumaruApp user={user} logout={logout} />;
+            return <RokumaruApp user={user} />;
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
