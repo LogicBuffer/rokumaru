@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ロクマル 管理者ダッシュボード</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+    <title>経費精算 ロクマル</title>
     
     <!-- React & Tailwind -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -12,44 +12,138 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Supabase & Chart.js -->
-    <!-- 安定性のために unpkg を使用 -->
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase SDK -->
+    <!-- ★修正: 安定性の高い jsDelivr の UMD版 に変更 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
 
     <!-- ★設定ファイル読み込み -->
     <script src="./config.js"></script>
 
     <style>
-        body { background-color: #f1f5f9; font-family: sans-serif; }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        /* 全画面固定設定 */
+        html {
+            height: -webkit-fill-available;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            height: -webkit-fill-available;
+            overflow: hidden;
+            background-color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            touch-action: none;
+        }
+
+        #root {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        /* PC表示設定 */
+        @media (min-width: 640px) {
+            body {
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background-color: #0f172a;
+                height: 100vh;
+            }
+            #root {
+                width: 375px;
+                height: 812px;
+                max-height: 90vh;
+                border-radius: 40px;
+                border: 12px solid #1e293b;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                position: relative;
+                overflow: hidden;
+            }
+        }
+        
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom, 20px); }
     </style>
 </head>
 <body>
+
     <div id="root"></div>
 
     <script type="text/babel">
         // --- 設定読み込み ---
         const config = window.ROKUMARU_CONFIG || {
+            // 予備設定 (config.js読み込み失敗時用)
             supabaseUrl: "https://oebdycuvvajivxumvgoo.supabase.co",
             supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYmR5Y3V2dmFqaXZ4dW12Z29vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY3OTgsImV4cCI6MjA4MzU0Mjc5OH0.WjrWr-WpBhBpVRc2qLTDUtaqPgXrHSBf4WcO-NzhufA"
         };
         
-        // グローバル変数として宣言（初期化はAppコンポーネントで行う）
+        // グローバル変数として宣言
         let supabase = null;
 
         const { useState, useEffect, useRef } = React;
 
-        const Icon = ({ name, size = 16, className = "" }) => {
+        const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [name]);
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
-        // --- 認証画面 (管理者用) ---
+        // --- ローディング画面 ---
+        const LoadingScreen = () => (
+            <div className="flex flex-col items-center justify-center h-full bg-slate-50 w-full">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-slate-400 text-sm font-bold tracking-wider">ROKUMARU</p>
+            </div>
+        );
+
+        // --- 期限切れ画面 ---
+        const ExpiredScreen = ({ userId }) => {
+            // ★Stripeの支払いリンク（https://buy.stripe.com/6oU9ASdNN2RG42D0qWc7u01）
+            const stripeUrl = "https://buy.stripe.com/test_..."; 
+
+            return (
+                <div className="flex flex-col h-full bg-slate-900 text-white p-8 items-center justify-center text-center w-full">
+                    <div className="mb-6 p-4 bg-red-500/20 rounded-full text-red-400">
+                        <Icon name="lock" size={48} />
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2">試用期間が終了しました</h2>
+                    <p className="text-slate-400 mb-8 text-sm">
+                        10日間の無料トライアル期間が過ぎました。<br/>
+                        引き続きご利用いただくには、製品版の購入をお願いいたします。
+                    </p>
+                    <div className="bg-slate-800 p-4 rounded-lg w-full mb-8 text-left">
+                        <p className="text-xs text-slate-500 mb-1">アカウントID</p>
+                        <p className="font-mono text-sm break-all">{userId}</p>
+                    </div>
+                    <a 
+                        href={stripeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-full shadow-lg transition-transform active:scale-95 block"
+                    >
+                        製品版を購入する (¥19,800)
+                    </a>
+                </div>
+            );
+        };
+
+        // --- 認証画面 ---
         const AuthScreen = ({ onLoginSuccess }) => {
             const [status, setStatus] = useState('idle');
 
             const login = async () => {
-                if (!supabase) return alert("システムエラー: Supabaseクライアントが初期化されていません。リロードしてください。");
+                if (!supabase) return alert("設定エラー: Supabaseクライアントが初期化されていません。リロードしてください。");
                 try {
                     setStatus('checking');
                     const { error } = await supabase.auth.signInWithOAuth({
@@ -65,283 +159,333 @@
             };
 
             return (
-                <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6">
-                    <div className="w-full max-w-md bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 text-center">
-                        <h1 className="text-2xl font-bold tracking-widest mb-2 flex items-center justify-center">
-                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-3">ADMIN</span>
-                            ロクマル 管理画面
+                <div className="flex flex-col h-full items-center justify-center bg-slate-900 text-white p-6 space-y-10 w-full">
+                    <div className="text-center">
+                        <h1 className="text-4xl font-bold tracking-widest mb-2">
+                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2 align-middle">ZERO</span>
+                            ロクマル
                         </h1>
-                        <p className="text-slate-400 text-sm mb-8">経営者・管理者用ログイン</p>
-
+                        <p className="text-slate-400 text-sm">現場のための、秒速経費精算。</p>
+                    </div>
+                    <div className="w-full max-w-xs space-y-4">
                         {status === 'checking' ? (
-                            <div className="text-center animate-pulse py-3"><p>認証サイトへ移動中...</p></div>
+                            <div className="text-center animate-pulse"><p>Googleへ移動中...</p></div>
                         ) : (
-                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-3 rounded-lg shadow hover:bg-slate-100 transition-colors flex items-center justify-center space-x-3">
+                            <button onClick={login} className="w-full bg-white text-slate-900 font-bold py-4 rounded-full shadow-lg flex items-center justify-center space-x-3 active:scale-95 transition-transform">
                                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" />
-                                <span>Googleアカウントでログイン</span>
+                                <span>Googleではじめる</span>
                             </button>
                         )}
-                        <p className="text-xs text-slate-500 mt-6">
-                            ※許可されたアカウントのみアクセス可能です
+                        <p className="text-xs text-center text-slate-500">
+                            まずは10日間、無料でお試しいただけます。
                         </p>
                     </div>
                 </div>
             );
         };
 
-        // --- 管理画面メイン ---
-        const AdminDashboard = ({ user, onLogout }) => {
-            const [view, setView] = useState('dashboard'); // dashboard | users
+        // --- メインアプリ ---
+        const RokumaruApp = ({ user, logout }) => {
+            const [screen, setScreen] = useState('home');
+            const [amount, setAmount] = useState('');
+            const [category, setCategory] = useState(null);
             const [expenses, setExpenses] = useState([]);
-            const [licenses, setLicenses] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [filterUser, setFilterUser] = useState("");
-            const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+            const [timeLeft, setTimeLeft] = useState(60);
+            const [capturedImage, setCapturedImage] = useState(null);
+            const [isSending, setIsSending] = useState(false);
+            
+            // トライアル管理
+            const [daysRemaining, setDaysRemaining] = useState(null); // null初期値
+            const [isExpired, setIsExpired] = useState(false);
+            const [isCheckingLicense, setIsCheckingLicense] = useState(true);
+            
+            const videoRef = useRef(null);
+            const streamRef = useRef(null);
 
-            // データ取得（経費データ）
-            const fetchExpenses = async () => {
-                setLoading(true);
-                let query = supabase.from('expenses').select('*').order('date', { ascending: false });
-                const { data, error } = await query;
-                if (error) alert("データ取得エラー: " + error.message);
-                else {
-                    setExpenses(data);
-                    updateCharts(data);
+            const categories = [
+                { id: 'food', name: 'メシ', icon: 'utensils', color: 'bg-orange-100 text-orange-700' },
+                { id: 'transport', name: '移動', icon: 'car', color: 'bg-blue-100 text-blue-700' },
+                { id: 'buy', name: '買う', icon: 'shopping-cart', color: 'bg-green-100 text-green-700' },
+                { id: 'park', name: 'Ｐ場', icon: 'circle-parking', color: 'bg-gray-100 text-gray-700' },
+                { id: 'other', name: '他', icon: 'file-text', color: 'bg-yellow-100 text-yellow-700' },
+                { id: 'stay', name: '泊り', icon: 'bed', color: 'bg-purple-100 text-purple-700' },
+            ];
+
+            useEffect(() => {
+                const initData = async () => {
+                    // 1. ローカルデータ読み込み
+                    const savedData = localStorage.getItem('rokumaru_data');
+                    if (savedData) setExpenses(JSON.parse(savedData));
+
+                    // 2. ライセンスチェック & データ同期
+                    if (supabase && user) {
+                        await checkTrialAndSync(user);
+                    }
+                };
+                initData();
+            }, [user]);
+
+            // ★トライアル期間チェック & データ同期
+            const checkTrialAndSync = async (authUser) => {
+                setIsCheckingLicense(true);
+                try {
+                    // ライセンス確認
+                    let { data: license, error } = await supabase
+                        .from('licenses')
+                        .select('*')
+                        .eq('email', authUser.email)
+                        .single();
+
+                    if (!license && !error) {
+                        // 新規作成
+                        const { data: newLicense, error: insertError } = await supabase
+                            .from('licenses')
+                            .insert([{ email: authUser.email }])
+                            .select()
+                            .single();
+                        if (!insertError) license = newLicense;
+                    }
+
+                    if (license) {
+                        if (license.is_paid) {
+                            setDaysRemaining(9999);
+                            setIsExpired(false);
+                        } else {
+                            const start = new Date(license.trial_start);
+                            const now = new Date();
+                            const diffTime = Math.abs(now - start);
+                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                            const remaining = 10 - diffDays;
+                            setDaysRemaining(remaining < 0 ? 0 : remaining);
+                            setIsExpired(remaining < 0);
+                        }
+                    }
+                    
+                    // データ同期 (クラウドから最新データを取得)
+                    await fetchExpenses(authUser.email);
+
+                } catch (err) {
+                    console.error("Init Error:", err);
+                    // エラーでもとりあえずローカルデータで動かすか、アラート出すか
+                } finally {
+                    setIsCheckingLicense(false);
                 }
-                setLoading(false);
             };
 
-            // データ取得（ユーザーライセンス）
-            const fetchLicenses = async () => {
-                setLoading(true);
-                let query = supabase.from('licenses').select('*').order('created_at', { ascending: false });
-                const { data, error } = await query;
-                if (error) alert("ユーザー取得エラー: " + error.message);
-                else setLicenses(data);
-                setLoading(false);
-            };
-
-            useEffect(() => { 
-                if (view === 'dashboard') fetchExpenses();
-                if (view === 'users') fetchLicenses();
-            }, [view]);
-
-            // ライセンス承認処理（製品版にする）
-            const approveUser = async (email) => {
-                if(!confirm(`${email} を製品版（無期限）にアップグレードしますか？`)) return;
+            const fetchExpenses = async (email) => {
+                if (!supabase) return;
+                const { data } = await supabase
+                    .from('expenses')
+                    .select('*')
+                    .eq('user_email', email)
+                    .order('created_at', { ascending: false });
                 
-                const { error } = await supabase
-                    .from('licenses')
-                    .update({ is_paid: true })
-                    .eq('email', email);
+                if (data) setExpenses(data);
+            };
 
-                if (error) alert("更新エラー: " + error.message);
-                else {
-                    alert("承認完了しました。");
-                    fetchLicenses(); // リスト更新
+            useEffect(() => {
+                let timer;
+                if (screen === 'input' && timeLeft > 0) {
+                    timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+                }
+                return () => clearInterval(timer);
+            }, [screen, timeLeft]);
+
+            const startCamera = async () => {
+                setScreen('camera');
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+                    streamRef.current = stream;
+                    if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+                } catch (err) { alert("カメラエラー: " + err); setScreen('input'); }
+            };
+
+            const stopCamera = () => {
+                if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+            };
+
+            const takePhoto = () => {
+                if (videoRef.current) {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 1024;
+                    let w = videoRef.current.videoWidth;
+                    let h = videoRef.current.videoHeight;
+                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(videoRef.current, 0, 0, w, h);
+                    setCapturedImage(canvas.toDataURL('image/jpeg', 0.7));
+                }
+                stopCamera();
+                setScreen('input');
+                setTimeLeft(60);
+                setAmount('');
+                setCategory(null);
+            };
+
+            const saveExpense = async () => {
+                if(isSending) return;
+                setIsSending(true);
+                const now = new Date();
+                const newItem = { 
+                    date: now.toLocaleString(), 
+                    amount: parseInt(amount) || 0, 
+                    category: category ? category.name : '未分類', 
+                    user_email: user.email, 
+                    memo: 'アプリ入力'
+                };
+
+                if (supabase) {
+                    try {
+                        const { error } = await supabase.from('expenses').insert([newItem]);
+                        if (error) throw error;
+                        await fetchExpenses(user.email);
+                        alert("保存＆クラウド同期完了！");
+                    } catch (e) { 
+                        console.error(e); 
+                        alert("保存エラー: ネット接続を確認してください"); 
+                    }
+                }
+                setIsSending(false);
+                setScreen('home');
+            };
+
+            const deleteExpense = async (id) => {
+                if(confirm("この経費データをクラウドから削除しますか？")) {
+                    if (supabase) {
+                        try {
+                            await supabase.from('expenses').delete().eq('id', id);
+                            await fetchExpenses(user.email);
+                        } catch (e) { console.error(e); alert("削除エラー"); }
+                    }
                 }
             };
-
-            // ライセンス停止処理
-            const revokeUser = async (email) => {
-                if(!confirm(`${email} の製品版権限を取り消してトライアルに戻しますか？`)) return;
-                
-                const { error } = await supabase
-                    .from('licenses')
-                    .update({ is_paid: false })
-                    .eq('email', email);
-
-                if (error) alert("更新エラー: " + error.message);
-                else fetchLicenses();
-            };
-
-            // フィルタリング処理 (経費)
-            const filteredData = expenses.filter(item => {
-                const itemMonth = item.date.split('/')[0] + '-' + item.date.split('/')[1].padStart(2, '0');
-                const isMonthMatch = item.date.includes(filterMonth.replace('-', '/')); 
-                const isUserMatch = filterUser ? item.user_email.includes(filterUser) : true;
-                return isMonthMatch && isUserMatch;
-            });
-
-            // 集計
-            const totalAmount = filteredData.reduce((sum, item) => sum + (item.amount || 0), 0);
-            const userCounts = {};
-            expenses.forEach(d => { userCounts[d.user_email] = true; }); // 全ユーザーリスト用
-
-            // チャート描画
-            const chartRef = useRef(null);
-            const chartInstance = useRef(null);
-
-            const updateCharts = (data) => {
-                if (!chartRef.current) return;
-                const categorySums = {};
-                data.forEach(d => { categorySums[d.category] = (categorySums[d.category] || 0) + d.amount; });
-                const ctx = chartRef.current.getContext('2d');
-                if (chartInstance.current) chartInstance.current.destroy();
-                chartInstance.current = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: Object.keys(categorySums),
-                        datasets: [{
-                            data: Object.values(categorySums),
-                            backgroundColor: ['#3b82f6', '#f97316', '#22c55e', '#eab308', '#a855f7', '#64748b']
-                        }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: false }
-                });
-            };
-
-            useEffect(() => { if(view === 'dashboard') updateCharts(filteredData); }, [filteredData, view]);
 
             const downloadCSV = () => {
+                if (expenses.length === 0) return alert("データがありません");
                 const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-                let csv = "日付,担当者,科目,金額,メモ\n";
-                filteredData.forEach(d => {
-                    csv += `${d.date},${d.user_email},${d.category},${d.amount},${d.memo}\n`;
+                let csvContent = "日付,金額,科目,メモ,アカウント\n";
+                expenses.forEach(e => {
+                    csvContent += `${(e.date||'').replace(',', '')},${e.amount},${e.category},${(e.memo||'').replace(',', ' ')},${e.user_email||''}\n`;
                 });
-                const blob = new Blob([bom, csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
+                const blob = new Blob([bom, csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `経費集計_${filterMonth}.csv`;
+                const dateStr = new Date().toISOString().slice(0,10);
+                a.download = `rokumaru_export_${dateStr}.csv`;
                 a.click();
             };
 
-            return (
-                <div className="min-h-screen flex flex-col">
-                    {/* ヘッダー */}
-                    <header className="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center">
-                        <div className="flex items-center space-x-4">
-                            <h1 className="text-xl font-bold tracking-widest flex items-center">
-                                <span className="bg-blue-600 text-xs px-2 py-1 rounded mr-2">ADMIN</span>
-                                ロクマル管理
-                            </h1>
-                            <nav className="flex space-x-1 bg-slate-800 rounded p-1">
-                                <button onClick={() => setView('dashboard')} className={`px-4 py-1 rounded text-sm ${view === 'dashboard' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>経費集計</button>
-                                <button onClick={() => setView('users')} className={`px-4 py-1 rounded text-sm ${view === 'users' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>ユーザー管理</button>
-                            </nav>
+            if (isCheckingLicense) return <LoadingScreen />;
+            if (isExpired) return <ExpiredScreen userId={user.email} />;
+
+            // --- UIコンポーネント ---
+            if (screen === 'home') {
+                const total = expenses.reduce((a,c) => a + (c.amount || 0), 0);
+                return (
+                    <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+                        <div className="p-4 bg-white shadow-sm flex justify-between items-center shrink-0">
+                            <h1 className="text-xl font-bold flex items-center text-slate-800"><span className="bg-blue-600 text-white text-xs px-2 py-1 rounded mr-2">ZERO</span>ロクマル</h1>
+                            <button onClick={logout} className="p-2 text-slate-400"><Icon name="log-out" /></button>
                         </div>
-                        <div className="flex items-center space-x-4">
-                            <span className="text-xs text-slate-400 hidden md:inline">{user.email}</span>
-                            <button onClick={() => view === 'dashboard' ? fetchExpenses() : fetchLicenses()} className="p-2 hover:bg-slate-800 rounded"><Icon name="refresh-cw"/></button>
-                            <button onClick={onLogout} className="p-2 hover:bg-red-900/50 text-red-300 rounded"><Icon name="log-out"/></button>
-                        </div>
-                    </header>
-
-                    <div className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
-                        
-                        {/* === ダッシュボード画面 === */}
-                        {view === 'dashboard' && (
-                            <React.Fragment>
-                                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1">対象月</label>
-                                        <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="border p-2 rounded-lg text-sm" />
+                        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8 overflow-y-auto">
+                            <div className="w-full bg-white p-6 rounded-2xl shadow border border-slate-200 text-center relative">
+                                {daysRemaining !== null && daysRemaining < 9999 && (
+                                    <div className={`absolute top-0 right-0 text-white text-[10px] px-2 py-0.5 rounded-bl ${daysRemaining <= 3 ? 'bg-red-500' : 'bg-blue-500'}`}>
+                                        試用残り {daysRemaining}日
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1">担当者絞り込み</label>
-                                        <select value={filterUser} onChange={e => setFilterUser(e.target.value)} className="border p-2 rounded-lg text-sm min-w-[200px]">
-                                            <option value="">全員</option>
-                                            {Object.keys(userCounts).map(email => <option key={email} value={email}>{email}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="ml-auto">
-                                        <button onClick={downloadCSV} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold flex items-center text-sm shadow-sm">
-                                            <Icon name="download" className="mr-2"/> CSV出力
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                        <h3 className="text-slate-500 text-sm font-bold mb-2">期間合計金額</h3>
-                                        <p className="text-4xl font-bold text-slate-800">¥ {totalAmount.toLocaleString()}</p>
-                                        <p className="text-xs text-slate-400 mt-2">件数: {filteredData.length} 件</p>
-                                    </div>
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 md:col-span-2 h-64 relative">
-                                        <h3 className="text-slate-500 text-sm font-bold absolute top-4 left-4">科目別内訳</h3>
-                                        <div className="h-full w-full pt-6">
-                                            <canvas ref={chartRef}></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="bg-slate-50 text-slate-500 border-b">
-                                            <tr>
-                                                <th className="p-4 font-bold">日付</th>
-                                                <th className="p-4 font-bold">担当者</th>
-                                                <th className="p-4 font-bold">科目</th>
-                                                <th className="p-4 font-bold">金額</th>
-                                                <th className="p-4 font-bold">メモ</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {filteredData.map(item => (
-                                                <tr key={item.id} className="hover:bg-slate-50">
-                                                    <td className="p-4">{item.date}</td>
-                                                    <td className="p-4 text-slate-600">{item.user_email}</td>
-                                                    <td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{item.category}</span></td>
-                                                    <td className="p-4 font-bold">¥ {item.amount.toLocaleString()}</td>
-                                                    <td className="p-4 text-slate-400">{item.memo}</td>
-                                                </tr>
-                                            ))}
-                                            {filteredData.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400">データがありません</td></tr>}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </React.Fragment>
-                        )}
-
-                        {/* === ユーザー管理画面 === */}
-                        {view === 'users' && (
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-                                    <h2 className="font-bold text-slate-700">ユーザーライセンス管理</h2>
-                                    <span className="text-xs text-slate-500">ログインしたユーザーが自動でここに表示されます</span>
-                                </div>
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-white text-slate-500 border-b">
-                                        <tr>
-                                            <th className="p-4 font-bold">メールアドレス</th>
-                                            <th className="p-4 font-bold">ステータス</th>
-                                            <th className="p-4 font-bold">開始日</th>
-                                            <th className="p-4 font-bold text-right">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {licenses.map(lic => (
-                                            <tr key={lic.email} className="hover:bg-slate-50">
-                                                <td className="p-4 font-bold text-slate-700">{lic.email}</td>
-                                                <td className="p-4">
-                                                    {lic.is_paid ? (
-                                                        <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-bold border border-green-200">製品版 (無期限)</span>
-                                                    ) : (
-                                                        <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-xs font-bold border border-orange-200">トライアル中</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-4 text-slate-500">{new Date(lic.trial_start).toLocaleDateString()}</td>
-                                                <td className="p-4 text-right">
-                                                    {lic.is_paid ? (
-                                                        <button onClick={() => revokeUser(lic.email)} className="text-slate-400 hover:text-red-500 text-xs underline">解除する</button>
-                                                    ) : (
-                                                        <button onClick={() => approveUser(lic.email)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded shadow text-xs font-bold transition-colors">
-                                                            製品版にする
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {licenses.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-slate-400">ユーザーがいません</td></tr>}
-                                    </tbody>
-                                </table>
+                                )}
+                                {daysRemaining >= 9999 && <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-bl">製品版</div>}
+                                <p className="text-slate-500 text-xs mb-1 truncate px-4">{user.email}</p>
+                                <p className="text-4xl font-bold text-slate-800">¥ {total.toLocaleString()}</p>
                             </div>
-                        )}
+                            <div className="relative group cursor-pointer" onClick={startCamera}>
+                                <div className="absolute inset-0 bg-blue-400 rounded-full blur-xl opacity-20 animate-pulse"></div>
+                                <button className="relative w-48 h-48 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full shadow-xl flex flex-col items-center justify-center text-white active:scale-95 transition-transform border-4 border-blue-100">
+                                    <Icon name="camera" size={64} /><span className="mt-2 text-xl font-bold tracking-widest">撮る</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-4 bg-white border-t shrink-0 safe-pb">
+                            <button onClick={() => setScreen('history')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-lg font-bold flex justify-center items-center"><Icon name="file-text" size={18} className="mr-2"/>履歴 / 出力</button>
+                        </div>
+                    </div>
+                );
+            }
 
+            if (screen === 'camera') return (
+                <div className="h-full bg-black relative flex flex-col overflow-hidden">
+                    <video ref={videoRef} className="flex-1 object-cover w-full" autoPlay playsInline muted></video>
+                    <div className="h-32 bg-black/80 flex items-center justify-center relative shrink-0 safe-pb">
+                        <button onClick={() => { stopCamera(); setScreen('home'); }} className="absolute left-8 text-white p-4"><Icon name="x" /></button>
+                        <button onClick={takePhoto} className="w-20 h-20 bg-white rounded-full border-4 border-slate-300 active:bg-slate-200"></button>
                     </div>
                 </div>
             );
+
+            if (screen === 'input') return (
+                <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+                    <div className="bg-slate-800 text-white p-3 flex justify-between items-center shrink-0">
+                        <div className="w-12 h-16 bg-slate-700 rounded overflow-hidden border border-slate-600">
+                             {capturedImage && <img src={capturedImage} className="w-full h-full object-cover" />}
+                        </div>
+                        <div className={`flex items-center px-3 py-1 rounded-full ${timeLeft < 10 ? 'bg-red-500 animate-pulse' : 'bg-slate-700'}`}>
+                            <Icon name="clock" size={16} className="mr-1" /><span className="font-mono font-bold text-lg">{timeLeft}</span>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex flex-col min-h-0">
+                        <div className="bg-white p-4 border-b border-slate-200 text-right shrink-0">
+                             <span className="text-2xl text-slate-400 mr-2">¥</span>
+                             <span className="text-5xl font-bold text-slate-800">{amount || 0}</span>
+                        </div>
+                        <div className="p-2 grid grid-cols-3 gap-2 bg-slate-100 shrink-0">
+                            {categories.map((cat) => (
+                                <button key={cat.id} onClick={() => setCategory(cat)} className={`p-3 rounded-xl border flex flex-col items-center justify-center active:scale-95 h-20 ${category && category.id === cat.id ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'}`}>
+                                    <Icon name={cat.icon} size={24} className="mb-1"/><span className="font-bold text-xs">{cat.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex-1 grid grid-cols-3 bg-white min-h-0">
+                            {[7,8,9,4,5,6,1,2,3].map(n => <button key={n} onClick={() => amount.length < 8 && setAmount(a=>a+n)} className="text-2xl font-medium border-slate-50 border text-slate-700 active:bg-slate-100 touch-manipulation">{n}</button>)}
+                            <button onClick={() => amount.length < 7 && setAmount(a=>a+"00")} className="text-xl font-medium border-slate-50 border text-slate-700 touch-manipulation">00</button>
+                            <button onClick={() => amount.length < 8 && setAmount(a=>a+"0")} className="text-2xl font-medium border-slate-50 border text-slate-700 touch-manipulation">0</button>
+                            <button onClick={() => setAmount(a=>a.slice(0,-1))} className="text-slate-500 border-slate-50 border bg-slate-50 flex items-center justify-center touch-manipulation"><Icon name="delete" /></button>
+                        </div>
+                    </div>
+                    <button onClick={saveExpense} disabled={!amount} className={`w-full py-4 text-white font-bold text-xl flex items-center justify-center shadow-lg shrink-0 safe-pb ${amount ? 'bg-blue-600 active:bg-blue-700' : 'bg-slate-400'}`}>
+                        {isSending ? "送信中..." : "保存＆クラウドへ"}
+                    </button>
+                </div>
+            );
+
+            if (screen === 'history') return (
+                <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+                    <div className="p-4 bg-white shadow-sm flex items-center justify-between shrink-0">
+                        <div className="flex items-center">
+                            <button onClick={() => setScreen('home')} className="mr-4"><Icon name="chevron-left" /></button>
+                            <h2 className="font-bold">履歴</h2>
+                        </div>
+                        <button onClick={downloadCSV} className="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg flex items-center font-bold">
+                            <Icon name="download" size={14} className="mr-1"/> CSV
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2 safe-pb">
+                         {expenses.length === 0 && <div className="text-center text-slate-400 mt-10">データなし</div>}
+                         {expenses.map(e => (
+                             <div key={e.id} className="bg-white p-3 rounded border flex justify-between items-center">
+                                 <div><div className="text-xs text-slate-500">{e.date}</div><div className="font-bold">¥{e.amount} <span className="text-xs font-normal bg-slate-100 px-1">{e.category}</span></div></div>
+                                 <div className="flex items-center gap-2">
+                                     <span className="text-green-500 text-xs flex items-center"><Icon name="check" size={12}/>済</span>
+                                     <button onClick={() => deleteExpense(e.id)} className="text-red-300 p-2"><Icon name="trash-2" size={16} /></button>
+                                 </div>
+                             </div>
+                         ))}
+                    </div>
+                </div>
+            );
+
+            return null;
         };
 
         // --- ルートコンポーネント (認証状態管理) ---
@@ -352,9 +496,9 @@
 
             useEffect(() => {
                 const initSupabase = async () => {
-                    // Supabase SDKの読み込み待ち (最大2秒待機)
                     let attempts = 0;
-                    while (!window.supabase && attempts < 20) {
+                    // 最大10秒待機（50→100に増加）
+                    while (!window.supabase && attempts < 100) {
                         await new Promise(r => setTimeout(r, 100));
                         attempts++;
                     }
@@ -372,6 +516,7 @@
                         }
                         
                         const { data: { session } } = await supabase.auth.getSession();
+                        // 三項演算子で安全にアクセス
                         setUser(session && session.user ? session.user : null);
                         
                         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -395,10 +540,15 @@
             };
 
             if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">Loading...</div>;
-            if (initError) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-red-400 p-4">{initError}</div>;
+            if (initError) return (
+                <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-red-400 p-4">
+                    <p className="mb-4">{initError}</p>
+                    <button onClick={() => window.location.reload()} className="px-4 py-2 bg-slate-800 rounded hover:bg-slate-700 text-white transition-colors">再読み込み</button>
+                </div>
+            );
             if (!user) return <AuthScreen />;
 
-            return <AdminDashboard user={user} onLogout={logout} />;
+            return <RokumaruApp user={user} logout={logout} />;
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
