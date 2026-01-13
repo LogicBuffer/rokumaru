@@ -13,7 +13,6 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- Supabase & Chart.js -->
-    <!-- 安定性のために unpkg を使用 -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -34,7 +33,6 @@
             supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYmR5Y3V2dmFqaXZ4dW12Z29vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjY3OTgsImV4cCI6MjA4MzU0Mjc5OH0.WjrWr-WpBhBpVRc2qLTDUtaqPgXrHSBf4WcO-NzhufA"
         };
         
-        // グローバル変数として宣言（初期化はAppコンポーネントで行う）
         let supabase = null;
 
         const { useState, useEffect, useRef } = React;
@@ -91,14 +89,13 @@
 
         // --- 管理画面メイン ---
         const AdminDashboard = ({ user, onLogout }) => {
-            const [view, setView] = useState('dashboard'); // dashboard | users
+            const [view, setView] = useState('dashboard');
             const [expenses, setExpenses] = useState([]);
             const [licenses, setLicenses] = useState([]);
             const [loading, setLoading] = useState(true);
             const [filterUser, setFilterUser] = useState("");
-            const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+            const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
 
-            // データ取得（経費データ）
             const fetchExpenses = async () => {
                 setLoading(true);
                 let query = supabase.from('expenses').select('*').order('date', { ascending: false });
@@ -111,7 +108,6 @@
                 setLoading(false);
             };
 
-            // データ取得（ユーザーライセンス）
             const fetchLicenses = async () => {
                 setLoading(true);
                 let query = supabase.from('licenses').select('*').order('created_at', { ascending: false });
@@ -126,36 +122,20 @@
                 if (view === 'users') fetchLicenses();
             }, [view]);
 
-            // ライセンス承認処理（製品版にする）
             const approveUser = async (email) => {
                 if(!confirm(`${email} を製品版（無期限）にアップグレードしますか？`)) return;
-                
-                const { error } = await supabase
-                    .from('licenses')
-                    .update({ is_paid: true })
-                    .eq('email', email);
-
+                const { error } = await supabase.from('licenses').update({ is_paid: true }).eq('email', email);
                 if (error) alert("更新エラー: " + error.message);
-                else {
-                    alert("承認完了しました。");
-                    fetchLicenses(); // リスト更新
-                }
+                else { alert("承認完了しました。"); fetchLicenses(); }
             };
 
-            // ライセンス停止処理
             const revokeUser = async (email) => {
                 if(!confirm(`${email} の製品版権限を取り消してトライアルに戻しますか？`)) return;
-                
-                const { error } = await supabase
-                    .from('licenses')
-                    .update({ is_paid: false })
-                    .eq('email', email);
-
+                const { error } = await supabase.from('licenses').update({ is_paid: false }).eq('email', email);
                 if (error) alert("更新エラー: " + error.message);
                 else fetchLicenses();
             };
 
-            // フィルタリング処理 (経費)
             const filteredData = expenses.filter(item => {
                 const itemMonth = item.date.split('/')[0] + '-' + item.date.split('/')[1].padStart(2, '0');
                 const isMonthMatch = item.date.includes(filterMonth.replace('-', '/')); 
@@ -163,12 +143,10 @@
                 return isMonthMatch && isUserMatch;
             });
 
-            // 集計
             const totalAmount = filteredData.reduce((sum, item) => sum + (item.amount || 0), 0);
             const userCounts = {};
-            expenses.forEach(d => { userCounts[d.user_email] = true; }); // 全ユーザーリスト用
+            expenses.forEach(d => { userCounts[d.user_email] = true; });
 
-            // チャート描画
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
 
@@ -209,7 +187,6 @@
 
             return (
                 <div className="min-h-screen flex flex-col">
-                    {/* ヘッダー */}
                     <header className="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center">
                         <div className="flex items-center space-x-4">
                             <h1 className="text-xl font-bold tracking-widest flex items-center">
@@ -294,7 +271,6 @@
                             </React.Fragment>
                         )}
 
-                        {/* === ユーザー管理画面 === */}
                         {view === 'users' && (
                             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                 <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
@@ -344,7 +320,6 @@
             );
         };
 
-        // --- ルートコンポーネント (認証状態管理) ---
         const App = () => {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
@@ -352,29 +327,29 @@
 
             useEffect(() => {
                 const initSupabase = async () => {
-                    // Supabase SDKの読み込み待ち (最大2秒待機)
                     let attempts = 0;
-                    while (!window.supabase && attempts < 20) {
+                    while (!window.supabase && attempts < 50) {
                         await new Promise(r => setTimeout(r, 100));
                         attempts++;
                     }
 
                     if (!window.supabase) {
-                        setInitError("Supabase SDKの読み込みに失敗しました。インターネット接続を確認してリロードしてください。");
+                        setInitError("Supabase SDKの読み込みに失敗しました。リロードしてください。");
                         setLoading(false);
                         return;
                     }
 
-                    // 初期化
                     try {
                         if (!supabase) {
                             supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
                         }
                         
                         const { data: { session } } = await supabase.auth.getSession();
+                        // 修正箇所: 三項演算子を使用して安全にアクセス
                         setUser(session && session.user ? session.user : null);
                         
                         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+                            // 修正箇所: 三項演算子を使用して安全にアクセス
                             setUser(session && session.user ? session.user : null);
                         });
                         
