@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ロクマル レジ用ツール</title>
+    
+    <!-- React & Tailwind -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- QRコード生成ライブラリ -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+
+    <style>
+        body { background-color: #f8fafc; font-family: sans-serif; touch-action: manipulation; }
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const Icon = ({ name, size = 24, className = "" }) => {
+            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} width={size} height={size} className={className}></i>;
+        };
+
+        const App = () => {
+            const [view, setView] = useState('setup'); // setup | input | qr
+            const [shopName, setShopName] = useState('');
+            const [invoiceNo, setInvoiceNo] = useState('');
+            const [amount, setAmount] = useState('');
+            const [qrData, setQrData] = useState(null);
+            const canvasRef = useRef(null);
+
+            // 初期化：保存された店舗情報を読み込む
+            useEffect(() => {
+                const savedShop = localStorage.getItem('rokumaru_shop_name');
+                const savedInvoice = localStorage.getItem('rokumaru_invoice_no');
+                if (savedShop) {
+                    setShopName(savedShop);
+                    setInvoiceNo(savedInvoice || '');
+                    setView('input');
+                }
+            }, []);
+
+            // 店舗情報の保存
+            const saveSettings = () => {
+                if (!shopName) return alert("店名を入力してください");
+                localStorage.setItem('rokumaru_shop_name', shopName);
+                localStorage.setItem('rokumaru_invoice_no', invoiceNo);
+                setView('input');
+            };
+
+            // QRコード生成
+            const generateQR = () => {
+                if (!amount || parseInt(amount) <= 0) return;
+                
+                // ロクマル用データ形式
+                const data = {
+                    shop: shopName,
+                    inv: invoiceNo,
+                    date: new Date().toISOString(), // 正確な日時
+                    amt: parseInt(amount)
+                };
+                
+                // JSON文字列化
+                const jsonStr = JSON.stringify(data);
+                setQrData(jsonStr);
+                setView('qr');
+
+                // 描画待ち
+                setTimeout(() => {
+                    if (canvasRef.current) {
+                        QRCode.toCanvas(canvasRef.current, jsonStr, { width: 256, margin: 2 }, function (error) {
+                            if (error) console.error(error);
+                        });
+                    }
+                }, 100);
+            };
+
+            const reset = () => {
+                setAmount('');
+                setQrData(null);
+                setView('input');
+            };
+
+            // --- 画面コンポーネント ---
+
+            // 1. 初期設定画面
+            if (view === 'setup') {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-900 text-white">
+                        <div className="w-full max-w-md space-y-6">
+                            <div className="text-center">
+                                <h1 className="text-2xl font-bold mb-2">店舗設定</h1>
+                                <p className="text-slate-400 text-sm">お客様のスマホに表示される店名を設定してください。</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold mb-1">お店の名前</label>
+                                <input type="text" value={shopName} onChange={e => setShopName(e.target.value)} className="w-full p-3 rounded text-slate-900" placeholder="例: ワークマン 柏店" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold mb-1">インボイス登録番号 (任意)</label>
+                                <input type="text" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} className="w-full p-3 rounded text-slate-900" placeholder="例: T1234567890123" />
+                            </div>
+                            <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded font-bold">設定を保存して開始</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 2. QR表示画面 (お客様に見せる画面)
+            if (view === 'qr') {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-blue-600 text-white">
+                        <div className="bg-white p-8 rounded-3xl shadow-2xl text-center space-y-4 max-w-sm w-full">
+                            <p className="text-slate-500 font-bold text-lg">{shopName}</p>
+                            <h2 className="text-5xl font-bold text-slate-900">¥ {parseInt(amount).toLocaleString()}</h2>
+                            
+                            <div className="flex justify-center py-4">
+                                <canvas ref={canvasRef} className="rounded-lg shadow-inner border border-slate-200"></canvas>
+                            </div>
+                            
+                            <p className="text-slate-500 text-sm animate-pulse font-bold">アプリ「ロクマル」で読み取ってください</p>
+                        </div>
+                        <button onClick={reset} className="mt-8 bg-white/20 hover:bg-white/30 text-white px-8 py-3 rounded-full font-bold backdrop-blur-sm">
+                            次の会計へ
+                        </button>
+                    </div>
+                );
+            }
+
+            // 3. 金額入力画面 (レジ)
+            return (
+                <div className="min-h-screen flex flex-col bg-slate-50">
+                    <header className="bg-white p-4 shadow-sm flex justify-between items-center text-slate-700">
+                        <span className="font-bold">{shopName}</span>
+                        <button onClick={() => setView('setup')}><Icon name="settings" size={20} /></button>
+                    </header>
+
+                    <div className="flex-1 flex flex-col p-4 max-w-md mx-auto w-full">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4 text-right">
+                            <span className="text-4xl font-bold text-slate-800">¥ {amount ? parseInt(amount).toLocaleString() : '0'}</span>
+                        </div>
+
+                        {/* テンキー */}
+                        <div className="grid grid-cols-3 gap-3 flex-1 mb-4">
+                            {[7,8,9,4,5,6,1,2,3].map(n => (
+                                <button key={n} onClick={() => amount.length < 7 && setAmount(a => a + n)} className="bg-white rounded-xl shadow-sm border border-slate-200 text-2xl font-bold text-slate-700 active:bg-slate-100 py-4">
+                                    {n}
+                                </button>
+                            ))}
+                            <button onClick={() => amount.length < 6 && setAmount(a => a + "00")} className="bg-white rounded-xl shadow-sm border border-slate-200 text-xl font-bold text-slate-700 active:bg-slate-100 py-4">00</button>
+                            <button onClick={() => amount.length < 7 && setAmount(a => a + "0")} className="bg-white rounded-xl shadow-sm border border-slate-200 text-2xl font-bold text-slate-700 active:bg-slate-100 py-4">0</button>
+                            <button onClick={() => setAmount(a => a.slice(0, -1))} className="bg-slate-200 rounded-xl shadow-inner text-slate-500 active:bg-slate-300 py-4 flex items-center justify-center">
+                                <Icon name="delete" />
+                            </button>
+                        </div>
+
+                        <button onClick={generateQR} disabled={!amount} className={`w-full py-4 rounded-xl font-bold text-xl shadow-lg text-white transition-all ${amount ? 'bg-blue-600 active:scale-95' : 'bg-slate-300'}`}>
+                            領収書QRを発行
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
